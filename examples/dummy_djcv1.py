@@ -1,9 +1,12 @@
 from deepjet_geometric.datasets import DeepJetCoreV1
 from torch_geometric.data import DataLoader
 
-test = DeepJetCoreV1('/Users/lagray/pytorch_work/bjets/data')
+import os
 
-load_test = DataLoader(test, batch_size=20, follow_batch=['x_track', 'x_sv'])
+test = DeepJetCoreV1(os.path.join(os.getcwd(), 'dummy_data'))
+
+load_train = DataLoader(test, batch_size=20, shuffle=True,
+                        follow_batch=['x_track', 'x_sv'])
 
 import torch
 from torch import nn
@@ -53,9 +56,9 @@ class Net(nn.Module):
         return out, batch
         
 dummy = Net()
-dummy.eval()
+dummy.eval() # just for example
 
-for data in load_test:
+for data in load_train:
     out = dummy(data.x_sv,
                 data.x_track,
                 data.x_sv_batch,
@@ -64,3 +67,4 @@ for data in load_test:
     print(data.x_sv.size(), data.x_track.size(), out[0].size())
     print(out[0])
     print(out[1])
+    #print(data)

@@ -99,13 +99,12 @@ class DeepJetCoreV1(Dataset):
 
     @property
     def processed_file_names(self):
-        processed_files = [fname[:-2] + '.pt' for fname in self.raw_paths]
-        processed_files = [osp.join(self.processed_dir, osp.split(fname)[-1]) for fname in processed_files]
-        return processed_files
+        return []
+
 
     def get(self, idx):
-        file_idx = np.searchsorted(self.strides, idx)
-        idx_in_file = idx - self.strides[max(0, file_idx - 1)]
+        file_idx = np.searchsorted(self.strides, idx) - 1
+        idx_in_file = idx - self.strides[max(0, file_idx)]
         if file_idx >= self.strides.size:
             raise Exception(f'{idx} is beyond the end of the event list {self.strides[-1]}')
         edge_index = torch.empty((2,0), dtype=torch.long)
