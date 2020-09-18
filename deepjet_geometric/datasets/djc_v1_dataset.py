@@ -112,9 +112,18 @@ class DeepJetCoreV1(Dataset):
         with h5py.File(self.raw_paths[file_idx]) as f:
             x_jet = np.squeeze(f['x0'][idx_in_file])
             Ntrack = int(x_jet[0])
-            x_track = f['x1'][idx_in_file,:Ntrack,:]
+            if Ntrack > 0:
+                x_track = f['x1'][idx_in_file,:Ntrack,:]
+            else:
+                Ntrack = 1
+                x_track = np.zeros((1,8), dtype=np.float32)
+            
             Nsv = int(x_jet[1])
-            x_sv = f['x2'][idx_in_file,:Nsv,:]
+            if Nsv > 0:
+                x_sv = f['x2'][idx_in_file,:Nsv,:]
+            else:
+                Nsv = 1
+                x_sv = np.zeros((1,2), dtype=np.float32)
 
             # convert to torch
             x_jet = torch.from_numpy(x_jet[2:])[None]
