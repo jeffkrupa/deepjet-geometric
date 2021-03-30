@@ -61,26 +61,35 @@ class MetV1(Dataset):
         with h5py.File(self.raw_paths[file_idx]) as f:
             
             Npfc = np.count_nonzero(f['x0'][idx_in_file,:,0])
-            x_pfc = f['x0'][idx_in_file,:Npfc,:]
-
             Nclus = np.amax(f['x1'][idx_in_file,:,0]) #getting the maximum cluster_idx
 
-            print(Nclus)
-            print(self.raw_paths[file_idx])
-            print(file_idx)
-
+            x_pfc = f['x0'][idx_in_file,:Npfc,:]
             x_clus = f['x1'][idx_in_file,:int(Nclus),:]
-
             x_glob = f['x2'][idx_in_file,:Npfc,:]
+
+
+            #print(x_pfc)
+            #print("XXX")
+            #print(np.concatenate(x_pfc).ravel())
+            #x_pfc = np.concatenate(x_pfc).ravel())
 
             # convert to torch
             x_pfc = torch.from_numpy(x_pfc)
             x_clus = torch.from_numpy(x_clus)
             x_glob = torch.from_numpy(x_glob)
+
+            #print(x_pfc)
             
             # target
             y = torch.from_numpy(f['y0'][idx_in_file,:Npfc,0])
             #y = torch.argmax(y)
 
+            # gen info
+            #gen = f['geninfo']
+            
+            #return Data(x=x_pfc, edge_index=edge_index, y=y,
+            #            x_pfc=x_pfc, x_clus=x_clus, x_glob=x_glob, gen=gen, N=Npfc)
+            
             return Data(x=x_pfc, edge_index=edge_index, y=y,
                         x_pfc=x_pfc, x_clus=x_clus, x_glob=x_glob)
+

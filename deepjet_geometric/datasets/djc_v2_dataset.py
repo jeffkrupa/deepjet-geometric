@@ -69,28 +69,28 @@ class DeepJetCoreV2(Dataset):
 
     def get(self, idx):
         file_idx = np.searchsorted(self.strides, idx) - 1
-        idx_in_file = idx - self.strides[max(0, file_idx)]
+        idx_in_file = idx - self.strides[max(0, file_idx)] - 1
         if file_idx >= self.strides.size:
             raise Exception(f'{idx} is beyond the end of the event list {self.strides[-1]}')
         edge_index = torch.empty((2,0), dtype=torch.long)
         with h5py.File(self.raw_paths[file_idx]) as f:
             x_jet = np.squeeze(f['x0'][idx_in_file])
             
-            Npfc = np.any(f['x1'][0] != 0.0, axis=-1).sum()
+            Npfc = np.any(f['x1'][idx_in_file] != 0.0, axis=-1).sum()
             if Npfc > 0:
                 x_pfc = f['x1'][idx_in_file,:Npfc,:]
             else:
                 Npfc = 1
                 x_pfc = np.zeros((1,10), dtype=np.float32)
             
-            Ntrack = np.any(f['x2'][0] != 0.0, axis=-1).sum()
+            Ntrack = np.any(f['x2'][idx_in_file] != 0.0, axis=-1).sum()
             if Ntrack > 0:
                 x_track = f['x2'][idx_in_file,:Ntrack,:]
             else:
                 Ntrack = 1
                 x_track = np.zeros((1,30), dtype=np.float32)
             
-            Nsv = np.any(f['x3'][0] != 0.0, axis=-1).sum()
+            Nsv = np.any(f['x3'][idx_in_file] != 0.0, axis=-1).sum()
             if Nsv > 0:
                 x_sv = f['x3'][idx_in_file,:Nsv,:]
             else:
