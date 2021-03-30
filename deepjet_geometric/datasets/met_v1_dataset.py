@@ -67,22 +67,13 @@ class MetV1(Dataset):
             x_clus = f['x1'][idx_in_file,:int(Nclus),:]
             x_glob = f['x2'][idx_in_file,:Npfc,:]
 
-
-            #print(x_pfc)
-            #print("XXX")
-            #print(np.concatenate(x_pfc).ravel())
-            #x_pfc = np.concatenate(x_pfc).ravel())
-
             # convert to torch
             x_pfc = torch.from_numpy(x_pfc)
             x_clus = torch.from_numpy(x_clus)
             x_glob = torch.from_numpy(x_glob)
 
-            #print(x_pfc)
-            
             # target
             y = torch.from_numpy(f['y0'][idx_in_file,:Npfc,0])
-            #y = torch.argmax(y)
 
             # gen info
             #gen = f['geninfo']
