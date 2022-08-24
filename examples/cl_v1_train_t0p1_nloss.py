@@ -255,13 +255,13 @@ for epoch in range(1, 100):
         subprocess.call("mkdir -p %s"%model_dir,shell=True)
 
     df.to_csv("%s/"%model_dir+"/loss.csv")
+    
+    state_dicts = {'model':cl.state_dict(),'opt':optimizer.state_dict(),'lr':scheduler.state_dict()}
+
+    torch.save(state_dicts, os.path.join(model_dir, f'epoch-{epoch}.pt'))
 
     if loss_val < best_val_loss:
         best_val_loss = loss_val
-        
-        state_dicts = {'model':cl.state_dict(),
-                       'opt':optimizer.state_dict(),
-                       'lr':scheduler.state_dict()} 
 
         torch.save(state_dicts, os.path.join(model_dir, 'best-epoch.pt'.format(epoch)))
 
