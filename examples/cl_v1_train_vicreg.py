@@ -63,30 +63,53 @@ def global_add_pool(x, batch, size=None):
     return scatter(x, batch, dim=0, dim_size=size, reduce='add')
 
 
-def contrastive_loss( x_i, x_j, temperature=0.1 ):
-    xdevice = x_i.get_device()
-    batch_size = x_i.shape[0]
-    z_i = F.normalize( x_i, dim=1 )
-    z_j = F.normalize( x_j, dim=1 )
-    #print("___")
-    #print(x_i)
-    #print(x_j)
-    #z_i = x_i
-    #z_j = x_j
-    z   = torch.cat( [z_i, z_j], dim=0 )
-    #print(z)
-    similarity_matrix = F.cosine_similarity( z.unsqueeze(1), z.unsqueeze(0), dim=2 )
-    #print(similarity_matrix)
-    sim_ij = torch.diag( similarity_matrix,  batch_size )
-    sim_ji = torch.diag( similarity_matrix, -batch_size )
-    positives = torch.cat( [sim_ij, sim_ji], dim=0 )
-    nominator = torch.exp( positives / temperature )
-    negatives_mask = ( ~torch.eye( 2*batch_size, 2*batch_size, dtype=bool ) ).float()
-    negatives_mask = negatives_mask.to( xdevice )
-    denominator = negatives_mask * torch.exp( similarity_matrix / temperature )
-    loss_partial = -torch.log( nominator / torch.sum( denominator, dim=1 ) )
-    loss = torch.sum( loss_partial )/( 2*batch_size )
-    return loss
+def off_diagonal(x):
+    n, m = x.shape
+    assert n == m
+    return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
+
+class VICRegLoss(torch.nn.Module):
+
+    def __init__(self, lambda_param=1,mu_param=1,nu_param=20):
+        super(VICRegLoss, self).__init__()
+        self.lambda_param = lambda_param
+        self.mu_param = mu_param
+        self.nu_param = nu_param
+        #self.device = torch.device('cpu')
+
+    def forward(self, x, y):
+        
+        self.device = (torch.device('cuda')if x.is_cuda else torch.device('cpu'))
+        x = F.normalize( x, dim=1 )
+        y = F.normalize( y, dim=1 )
+        x_scale = x
+        y_scale = y
+        repr_loss = F.mse_loss(x_scale, y_scale)
+        
+        #x = torch.cat(FullGatherLayer.apply(x), dim=0)
+        #y = torch.cat(FullGatherLayer.apply(y), dim=0)
+        x_scale = x_scale - x_scale.mean(dim=0)
+        y_scale = y_scale - y_scale.mean(dim=0)
+        N = x_scale.size(0)
+        D = x_scale.size(1)
+        
+        std_x = torch.sqrt(x_scale.var(dim=0) + 0.0001)
+        std_y = torch.sqrt(y_scale.var(dim=0) + 0.0001)
+        std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
+        x_scale = (x_scale - x_scale.mean(dim=0))/x_scale.std(dim=0) ##!!!!! More Robust
+        y_scale = (y_scale - y_scale.mean(dim=0))/y_scale.std(dim=0) ##!!!!! More Robust
+        cov_x = (x_scale.T @ x_scale) / (N - 1)
+        cov_y = (y_scale.T @ y_scale) / (N - 1)
+        cov_loss = off_diagonal(cov_x).pow_(2).sum().div(D) + off_diagonal(cov_y).pow_(2).sum().div(D)
+
+        #loss = (self.lambda_param * repr_loss + self.mu_param * std_loss+ self.nu_param * cov_loss)
+        #print(repr_loss,cov_loss,std_loss)
+        return repr_loss,cov_loss,std_loss
+
+
+
+
+
 
 
 
@@ -154,6 +177,7 @@ optimizer = torch.optim.Adam(cl.parameters(), lr=0.001)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
 #scheduler.load_state_dict(torch.load(model_dir+"epoch-32.pt")['lr'])
 
+vrloss = VICRegLoss()
 
 def train():
     cl.train()
@@ -188,8 +212,9 @@ def train():
         '''
         #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].float())
         #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].reshape(-1,2)[:,:1].reshape(-1))
-        loss = contrastive_loss(out[0][0::2],out[0][1::2],0.1)
-
+        #loss = contrastive_loss(out[0][0::2],out[0][1::2],0.1)
+        loss_clr,loss_corr,loss_var = vrloss(out[0][0::2],out[0][1::2]) 
+        loss = loss_clr + loss_corr + loss_var
         #print(data.y)
         #print(loss.item())
         
@@ -218,8 +243,9 @@ def test():
             #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].float())
             #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].reshape(-1,2)[:,:1].reshape(-1))
             #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].float())
-            loss = contrastive_loss(out[0][0::2],out[0][1::2],0.1)
-
+            #loss = contrastive_loss(out[0][0::2],out[0][1::2],0.1)
+            loss_clr,loss_corr,loss_var = vrloss(out[0][0::2],out[0][1::2])
+            loss = loss_clr + loss_corr + loss_var
 
             total_loss += loss.item()
     return total_loss / len(test_loader.dataset)
@@ -256,12 +282,12 @@ for epoch in range(1, 100):
 
     df.to_csv("%s/"%model_dir+"/loss.csv")
 
+    state_dicts = {'model':cl.state_dict(),'opt':optimizer.state_dict(),'lr':scheduler.state_dict()}
+
+    torch.save(state_dicts, os.path.join(model_dir, f'epoch-{epoch}.pt'))
+    
     if loss_val < best_val_loss:
         best_val_loss = loss_val
-        
-        state_dicts = {'model':cl.state_dict(),
-                       'opt':optimizer.state_dict(),
-                       'lr':scheduler.state_dict()} 
 
         torch.save(state_dicts, os.path.join(model_dir, 'best-epoch.pt'.format(epoch)))
 
