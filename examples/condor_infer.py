@@ -26,7 +26,6 @@ data_test = CLV1ROOT(args.ipath,ratio=True)
 test_loader = DataLoader(data_test, batch_size=BATCHSIZE,shuffle=False,
                          follow_batch=['x_pf'])
 
-#exit(1)
 
 import torch
 from torch import nn
@@ -65,11 +64,6 @@ def contrastive_loss( x_i, x_j, temperature=0.1 ):
     batch_size = x_i.shape[0]
     z_i = F.normalize( x_i, dim=1 )
     z_j = F.normalize( x_j, dim=1 )
-    #print("___")
-    #print(x_i)
-    #print(x_j)
-    #z_i = x_i
-    #z_j = x_j
     z   = torch.cat( [z_i, z_j], dim=0 )
     #print(z)
     similarity_matrix = F.cosine_similarity( z.unsqueeze(1), z.unsqueeze(0), dim=2 )
@@ -112,16 +106,13 @@ class Net(nn.Module):
             nn.ELU(),
             nn.Linear(32, 32),
             nn.ELU(),
-            nn.Linear(32, 8)#,
-#            nn.ELU(),
-#            nn.Linear(16, 8)
+            nn.Linear(32, 8)
         )
         
     def forward(self,
                 x_pf,
                 batch_pf):
-        #print(x_ts)
-        #x_pf = BatchNorm(x_pf)
+
         x_pf_enc = self.pf_encode(x_pf)
         
         # create a representation of LCs to LCs
@@ -143,15 +134,7 @@ device = 'cpu' # torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
 
 cl = Net().to(device)
-
-#torch.load('classifier.pt', map_location=torch.device('cpu'))
 cl.load_state_dict(torch.load(model_dir+"best-epoch.pt", map_location=torch.device('cpu'))['model'])
-#optimizer = torch.optim.Adam(cl.parameters(), lr=0.001)
-#optimizer.load_state_dict(torch.load(model_dir+"best-epoch.pt")['opt'])
-#scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
-#scheduler.load_state_dict(torch.load(model_dir+"best-epoch.pt")['lr'])
-
-print("A")
 
 @torch.no_grad()
 def test():
@@ -168,19 +151,10 @@ def test():
             out = cl(data.x_pf,
                        data.x_pf_batch)
 
-            #loss = contrastive_loss(out[0][0::2],out[0][1::2],0.2)
-            #print("OUTTTT")
-            #print(out[0][0].numpy())
-            #print(data.x_jet.numpy())
-            #print(np.concatenate((out[0][0].numpy(),data.x_jet.numpy()),axis=None))
+
             jet_features.append(np.concatenate((out[0][0].numpy(),data.x_jet.numpy()),axis=None))
             total_loss += 1
 
-
-            
-        #if counter > 100:
-        #    break
-        
     jet_features = np.array(jet_features)
     ofile = h5py.File("../../test.h5",'w')
     ofile.create_dataset('jet_features', data=jet_features)
