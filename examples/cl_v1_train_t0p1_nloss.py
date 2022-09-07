@@ -17,8 +17,11 @@ parser = argparse.ArgumentParser(description='Test.')
 parser.add_argument('--ipath', action='store', type=str, help='Path to input files.')
 parser.add_argument('--vpath', action='store', type=str, help='Path to validation files.')
 parser.add_argument('--opath', action='store', type=str, help='Path to save models and plots.')
+parser.add_argument('--temperature', action='store', type=str, help='SIMCLR Temperature.')
+parser.add_argument('--nepochs', action='store', type=str, help='Number of epochs to train for.')
 args = parser.parse_args()
-
+temperature = float(args.temperature)
+nepochs = int(args.nepochs)
 print(args.ipath)
 
 data_train = CLV1(args.ipath,ratio=True)
@@ -69,6 +72,7 @@ def contrastive_loss( x_i, x_j, temperature=0.1 ):
     z_i = F.normalize( x_i, dim=1 )
     z_j = F.normalize( x_j, dim=1 )
     #print("___")
+    #print("temperature",temperature)
     #print(x_i)
     #print(x_j)
     #z_i = x_i
@@ -188,7 +192,7 @@ def train():
         '''
         #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].float())
         #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].reshape(-1,2)[:,:1].reshape(-1))
-        loss = contrastive_loss(out[0][0::2],out[0][1::2],0.1)
+        loss = contrastive_loss(out[0][0::2],out[0][1::2],temperature)
 
         #print(data.y)
         #print(loss.item())
@@ -196,7 +200,7 @@ def train():
         loss.backward()
         total_loss += loss.item()
         optimizer.step()
-        #if counter > 1:
+        #if counter > 100:
         #    break
         
     return total_loss / len(train_loader.dataset)
@@ -218,10 +222,13 @@ def test():
             #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].float())
             #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].reshape(-1,2)[:,:1].reshape(-1))
             #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].float())
-            loss = contrastive_loss(out[0][0::2],out[0][1::2],0.1)
+            loss = contrastive_loss(out[0][0::2],out[0][1::2],temperature)
 
-
+       
             total_loss += loss.item()
+
+        #if counter > 100:
+        #    break
     return total_loss / len(test_loader.dataset)
 
 best_val_loss = 1e9
@@ -231,7 +238,7 @@ all_val_loss = []
 
 loss_dict = {'train_loss': [], 'val_loss': []}
 
-for epoch in range(1, 100):
+for epoch in range(1, nepochs):
     print(f'Training Epoch {epoch} on {len(train_loader.dataset)} jets')
     loss = train()
     scheduler.step()
@@ -252,7 +259,8 @@ for epoch in range(1, 100):
     
 
     if not os.path.exists(model_dir):
-        subprocess.call("mkdir -p %s"%model_dir,shell=True)
+        os.system("mkdir -p "+model_dir)
+        #subprocess.call("mkdir -p %s"%model_dir,shell=True)
 
     df.to_csv("%s/"%model_dir+"/loss.csv")
     

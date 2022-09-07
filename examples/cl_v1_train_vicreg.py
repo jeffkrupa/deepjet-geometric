@@ -17,7 +17,16 @@ parser = argparse.ArgumentParser(description='Test.')
 parser.add_argument('--ipath', action='store', type=str, help='Path to input files.')
 parser.add_argument('--vpath', action='store', type=str, help='Path to validation files.')
 parser.add_argument('--opath', action='store', type=str, help='Path to save models and plots.')
+parser.add_argument('--mse', action='store', type=str, help='MSE weight.')
+parser.add_argument('--var', action='store', type=str, help='Var weight.')
+parser.add_argument('--cov', action='store', type=str, help='Cov weight.')
+parser.add_argument('--nepochs', action='store', type=str, help='Number of epochs to train for.')
 args = parser.parse_args()
+print(args)
+weightMSE = float(args.mse)
+weightVAR = float(args.var)
+weightCOV = float(args.cov)
+nepochs = int(args.nepochs)
 
 print(args.ipath)
 
@@ -96,8 +105,8 @@ class VICRegLoss(torch.nn.Module):
         std_x = torch.sqrt(x_scale.var(dim=0) + 0.0001)
         std_y = torch.sqrt(y_scale.var(dim=0) + 0.0001)
         std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
-        x_scale = (x_scale - x_scale.mean(dim=0))/x_scale.std(dim=0) ##!!!!! More Robust
-        y_scale = (y_scale - y_scale.mean(dim=0))/y_scale.std(dim=0) ##!!!!! More Robust
+        #x_scale = (x_scale - x_scale.mean(dim=0))/x_scale.std(dim=0) ##!!!!! More Robust
+        #y_scale = (y_scale - y_scale.mean(dim=0))/y_scale.std(dim=0) ##!!!!! More Robust
         cov_x = (x_scale.T @ x_scale) / (N - 1)
         cov_y = (y_scale.T @ y_scale) / (N - 1)
         cov_loss = off_diagonal(cov_x).pow_(2).sum().div(D) + off_diagonal(cov_y).pow_(2).sum().div(D)
@@ -214,14 +223,14 @@ def train():
         #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].reshape(-1,2)[:,:1].reshape(-1))
         #loss = contrastive_loss(out[0][0::2],out[0][1::2],0.1)
         loss_clr,loss_corr,loss_var = vrloss(out[0][0::2],out[0][1::2]) 
-        loss = loss_clr + loss_corr + loss_var
+        loss = weightMSE*loss_clr + weightCOV*loss_corr + weightVAR*loss_var
         #print(data.y)
         #print(loss.item())
         
         loss.backward()
         total_loss += loss.item()
         optimizer.step()
-        #if counter > 1:
+        #if counter > 100:
         #    break
         
     return total_loss / len(train_loader.dataset)
@@ -245,9 +254,11 @@ def test():
             #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].float())
             #loss = contrastive_loss(out[0][0::2],out[0][1::2],0.1)
             loss_clr,loss_corr,loss_var = vrloss(out[0][0::2],out[0][1::2])
-            loss = loss_clr + loss_corr + loss_var
+            loss = weightMSE*loss_clr + weightCOV*loss_corr + weightVAR*loss_var
 
             total_loss += loss.item()
+            #if counter > 100:
+            #    break
     return total_loss / len(test_loader.dataset)
 
 best_val_loss = 1e9
@@ -257,7 +268,7 @@ all_val_loss = []
 
 loss_dict = {'train_loss': [], 'val_loss': []}
 
-for epoch in range(1, 100):
+for epoch in range(1, nepochs):
     print(f'Training Epoch {epoch} on {len(train_loader.dataset)} jets')
     loss = train()
     scheduler.step()
@@ -278,7 +289,7 @@ for epoch in range(1, 100):
     
 
     if not os.path.exists(model_dir):
-        subprocess.call("mkdir -p %s"%model_dir,shell=True)
+        os.system("mkdir -p "+model_dir)
 
     df.to_csv("%s/"%model_dir+"/loss.csv")
 
@@ -290,7 +301,6 @@ for epoch in range(1, 100):
         best_val_loss = loss_val
 
         torch.save(state_dicts, os.path.join(model_dir, 'best-epoch.pt'.format(epoch)))
-
 
 print(all_train_loss)
 print(all_val_loss)

@@ -18,12 +18,13 @@ class CLV1(Dataset):
 
     url = '/dummy/'
 
-    def __init__(self, root, transform=None, ratio=False):
+    def __init__(self, root, transform=None, ratio=False, seedOnly=False):
         super(CLV1, self).__init__(root, transform)
         
         self.strides = [0]
         self.ratio = ratio
         self.calculate_offsets()
+        self.seedOnly = seedOnly
 
     def calculate_offsets(self):
         for path in self.raw_paths:
@@ -77,7 +78,7 @@ class CLV1(Dataset):
             print(file_idx)
             print("=== idx in file")
             print(idx_in_file)
-            print("Shape")
+            #print("Shape")
             print(f['features'][()].shape)
             #print(np.count_nonzero(f['features'][110148,:,0]))
             '''
@@ -85,20 +86,30 @@ class CLV1(Dataset):
             Npfs = np.count_nonzero(f['features'][idx_in_file,:,0])
             
             
-            x_pf = f['features'][idx_in_file,:Npfs,:]
-
+            #Npfs = 20
+            x_pf = torch.cuda.FloatTensor(f['features'][idx_in_file,:Npfs,:]).cuda()
+            #print(x_pf.shape)
             # convert to torch
-            x = torch.from_numpy(f['features'][idx_in_file,:Npfs,:])
-            x_pf = torch.from_numpy(x_pf).float()
+            x = torch.cuda.FloatTensor(f['features'][idx_in_file,:Npfs,:]).cuda()
+            #x = torch.from_numpy(f['features'][idx_in_file,:Npfs,:])
+            #x_pf = torch.from_numpy(x_pf).float()
 
             # targets
-            y = torch.from_numpy(np.asarray(f['truth_label'][idx_in_file]))
+            #print(np.array(f['truth_label'][idx_in_file],dtype=np.float32))
+            y = torch.cuda.FloatTensor(np.array(f['truth_label'][idx_in_file],dtype=np.float32))
+            #print("truth_label",f['truth_label'][idx_in_file])
+            #print("vartype",f['vartype'][idx_in_file])
+            #print("x_jet",f['jet_features'][idx_in_file])
+            #print(f['parton_features'][idx_in_file])
+            x_vartype = torch.cuda.FloatTensor(np.array(f['vartype'][idx_in_file]))
+            x_jettype = torch.cuda.FloatTensor(np.array(f['jettype'][idx_in_file]))
+            x_part = torch.cuda.FloatTensor(f['parton_features'][idx_in_file])
+            x_jet = torch.cuda.FloatTensor(f['jet_features'][idx_in_file])
 
-            x_part = torch.from_numpy(np.asarray(f['parton_features'][idx_in_file]))
+            #print("=== x_vartype")
+            #print(x_vartype)
+            #print(y)
 
-            #print("=== x_part")
-            #print(x_part)
-            
             return Data(x=x, edge_index=edge_index, y=y,
-                        x_pf=x_pf, x_part=x_part)
+                        x_pf=x_pf, x_part=x_part, x_jet=x_jet,x_vartype=x_vartype,x_jettype=x_jettype)
 

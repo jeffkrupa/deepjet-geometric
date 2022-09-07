@@ -173,7 +173,7 @@ def test():
             #print(out[0][0].numpy())
             #print(data.x_jet.numpy())
             #print(np.concatenate((out[0][0].numpy(),data.x_jet.numpy()),axis=None))
-            jet_features.append(np.concatenate((out[0][0].numpy(),data.x_jet.numpy()),axis=None))
+            jet_features.append(np.concatenate((out[0][0].numpy(),data.x_jet.numpy(),data.x_jettype.numpy()),axis=None))
             total_loss += 1
 
 
