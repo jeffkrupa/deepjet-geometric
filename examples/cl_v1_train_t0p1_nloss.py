@@ -5,7 +5,7 @@ import subprocess
 import tqdm
 import pandas as pd
 
-from deepjet_geometric.datasets import CLV1
+from deepjet_geometric.datasets import CLV2
 from torch_geometric.data import DataLoader
 
 import os
@@ -24,8 +24,8 @@ temperature = float(args.temperature)
 nepochs = int(args.nepochs)
 print(args.ipath)
 
-data_train = CLV1(args.ipath,ratio=True)
-data_test = CLV1(args.vpath,ratio=True)
+data_train = CLV2(args.ipath,ratio=True)
+data_test = CLV2(args.vpath,ratio=True)
 
 train_loader = DataLoader(data_train, batch_size=BATCHSIZE,shuffle=False,
                           follow_batch=['x_pf'])
@@ -107,7 +107,15 @@ class Net(nn.Module):
             nn.ELU()
         )
 
-        self.conv = DynamicEdgeConv(
+        self.conv1 = DynamicEdgeConv(
+            nn=nn.Sequential(nn.Linear(2*hidden_dim, hidden_dim), nn.ELU()),
+            k=24
+        )
+        self.conv2 = DynamicEdgeConv(
+            nn=nn.Sequential(nn.Linear(2*hidden_dim, hidden_dim), nn.ELU()),
+            k=24
+        )
+        self.conv3 = DynamicEdgeConv(
             nn=nn.Sequential(nn.Linear(2*hidden_dim, hidden_dim), nn.ELU()),
             k=24
         )
@@ -132,10 +140,10 @@ class Net(nn.Module):
         x_pf_enc = self.pf_encode(x_pf)
         
         # create a representation of LCs to LCs
-        feats1 = self.conv(x=(x_pf_enc, x_pf_enc), batch=(batch_pf, batch_pf))
-        feats2 = self.conv(x=(feats1, feats1), batch=(batch_pf, batch_pf))
+        feats1 = self.conv1(x=(x_pf_enc, x_pf_enc), batch=(batch_pf, batch_pf))
+        feats2 = self.conv2(x=(feats1, feats1), batch=(batch_pf, batch_pf))
         # similarly a representation LCs to Trackster
-        feats3 = self.conv(x=(feats2, feats2), batch=(batch_pf, batch_pf))
+        feats3 = self.conv3(x=(feats2, feats2), batch=(batch_pf, batch_pf))
 
 
         batch = batch_pf
