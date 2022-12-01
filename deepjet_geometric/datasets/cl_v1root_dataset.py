@@ -138,6 +138,6 @@ class CLV1ROOT(Dataset):
         y = torch.from_numpy(np.array(jet_type))
 
         return Data(x=x, edge_index=edge_index, y=y,
-                        x_pf=x_pf, x_jet=x_jet)
+                        x_pf=x_pf, x_jet=x_jet,x_jettype=jet_type)
         
 

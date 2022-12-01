@@ -111,8 +111,8 @@ class Net(nn.Module):
             nn.Linear(64, 32),
             nn.ELU(),
             nn.Linear(32, 32),
-            nn.ELU(),
-            nn.Linear(32, 8)#,
+            #nn.ELU(),
+            #nn.Linear(32, 8)#,
 #            nn.ELU(),
 #            nn.Linear(16, 8)
         )
