@@ -12,25 +12,16 @@ import awkward as ak
 import pickle
 import pandas as pd
 from scipy.spatial import distance_matrix
-import sys 
-from sklearn.preprocessing import normalize
-
-ipath = sys.argv[1]
-
-
-with h5py.File(ipath+"/qcd_nominal/qcd_nominal_train.h5", 'r') as f:
-    x_train_qcd = f['features'][()]
-    print(x_train_qcd[0])
-    x_train_qcd = normalize(x_train_qcd,axis=1)
-with h5py.File(ipath+"/higgs_nominal/higgs_nominal_train.h5", 'r') as f:
-    x_train_higgs = f['features'][()]
-    x_train_higgs = normalize(x_train_higgs,axis=1)
-with h5py.File(ipath+"/qcd_nominal/qcd_nominal_val.h5", 'r') as f:
-    x_val_qcd = f['features'][()]
-    x_val_qcd = normalize(x_val_qcd,axis=1)
-with h5py.File(ipath+"/higgs_nominal/higgs_nominal_val.h5", 'r') as f:
-    x_val_higgs = f['features'][()]
-    x_val_higgs = normalize(x_val_higgs,axis=1)
+import sys
+tag=sys.argv[1]
+with h5py.File(f"./samples/{tag}/qcd_nominal_train.h5", 'r') as f:
+    x_train_qcd = f['jet_features'][()]
+with h5py.File(f"./samples/{tag}/higgs_nominal_train.h5", 'r') as f:
+    x_train_higgs = f['jet_features'][()]
+with h5py.File(f"./samples/{tag}/qcd_nominal_val.h5", 'r') as f:
+    x_val_qcd = f['jet_features'][()]
+with h5py.File(f"./samples/{tag}/higgs_nominal_val.h5", 'r') as f:
+    x_val_higgs = f['jet_features'][()]
 
 
 print(x_train_qcd.shape)
@@ -63,8 +54,7 @@ random.shuffle(indices)
 x_train_shuffled = torch.from_numpy(np.array(x_train[indices])).float()
 y_train_shuffled = torch.from_numpy(np.array(y_train[indices])).float()
 
-print(x_train_shuffled[:100])
-print(y_train_shuffled[:100])
+
 
 #print(x_train)
 #print(x_train_shuffled.shape)
@@ -76,12 +66,16 @@ print(y_train_shuffled[:100])
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-devide = 'cpu'
+#devide = 'cpu'
 print(f"Using {device} device")
+#torch.cuda.set_device(1)
 
+x_train_shuffled = x_train_shuffled.to(device)
+y_train_shuffled = y_train_shuffled.to(device)
+x_val = x_val.to(device)
+y_val = y_val.to(device)
 
-model = nn.Sequential(nn.BatchNorm1d(8,eps=0.01,momentum=0.9),
-                      nn.Linear(8, 128),
+model = nn.Sequential(nn.Linear(8, 128),
                       nn.ReLU(),
                       nn.Linear(128, 64),
                       nn.ReLU(),
@@ -92,7 +86,7 @@ model = nn.Sequential(nn.BatchNorm1d(8,eps=0.01,momentum=0.9),
                       nn.Linear(8, 1),
                       nn.Sigmoid())
 
-
+model = model.to(device)
 
 loss_function = nn.BCEWithLogitsLoss()
 #loss_function = nn.MSELoss()
@@ -101,18 +95,17 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 def train():
     model.train()
-    optimizer.zero_grad()
     pred_y = model(x_train_shuffled)
-    
     #print(pred_y)
     loss = loss_function(torch.flatten(pred_y), y_train_shuffled)
     #losses.append(loss.item())
     #print(loss.item())
-    #model.zero_grad()
+    model.zero_grad()
     loss.backward()
 
     optimizer.step()
-
+    #print(model,x_train_shuffled)
+    #sys.exit(1)
     return loss.item()
     
 @torch.no_grad()
@@ -129,6 +122,7 @@ def val(x_test):
     model.eval()
     with torch.no_grad():
         pred_y = model(x_test)
+        #print(model,x_test)
         return pred_y
 
 
@@ -145,8 +139,8 @@ best_val_loss = 1e9
 loss_dict = {'train':[],'val':[]}
 
 last_ten = []
-
-for epoch in range(1000):
+all_losses = [] 
+for epoch in range(10000):
     train_loss = train()
 
     val_loss = test()
@@ -166,48 +160,57 @@ for epoch in range(1000):
         state_dicts = {'model':model.state_dict(),
                        'opt':optimizer.state_dict()} 
 
-        torch.save(state_dicts, 'best-epoch.pt')
+        torch.save(state_dicts, f"./samples/{tag}/best-epoch.pt")
 
     #if early_stopping(loss_dict['train'], loss_dict['val'], min_delta=10, tolerance = 20):
     #  print("We are at epoch:", epoch)
     #  break
 
-
-    if len(last_ten) > 9:
-        last_ten.pop(0)
-        last_ten.append(val_loss)
-
-        criterion = (np.max(last_ten) - np.min(last_ten))/np.max(last_ten)
-        #print(np.max(last_ten))
-        #print(np.min(last_ten))
-        #print(criterion)
-        if criterion < 0.0003:
+    all_losses.append(val_loss)
+    if epoch > 60: 
+        if np.abs( (np.max(all_losses[epoch-60:epoch-30]) - np.min(all_losses[epoch-60:epoch-30])) ) / np.abs( (np.max(all_losses[epoch-20:epoch]) - np.min(all_losses[epoch-20:epoch])) ) < 1e-2:
             break
-    else:
-        last_ten.append(val_loss)
-
+        if np.mean(all_losses[epoch-60:epoch-30]) - (np.mean(all_losses[epoch-20:epoch])) < 0:
+            break
+    #if len(last_ten) > 9:
+    #    last_ten.pop(0)
+    #    last_ten.append(val_loss)
+    #
+    #    criterion = (np.max(last_ten) - np.min(last_ten))/np.max(last_ten)
+    #    #print(np.max(last_ten))
+    #    #print(np.min(last_ten))
+    #    #print(criterion)
+    #    if criterion < 0.00003:
+    #        break
+    #else:
+    #    last_ten.append(val_loss)
 
 df = pd.DataFrame.from_dict(loss_dict)
-df.to_csv("losses_t0p1.csv")
+df.to_csv(f"./samples/{tag}/losses_t0p1.csv")
 
-
+#device = "cpu"
 for process in ['higgs','qcd']:
-    for v in ['nominal','fsrRenHi','fsrRenLo','herwig']:
+    for v in ['nominal','seed','fsrRenHi','fsrRenLo','herwig']:
         if v == 'nominal':
-            fname = f'{ipath}/{process}_{v}/{process}_{v}_test.h5'
+            fname = f'./samples/{tag}/{process}_{v}_val.h5'
         else:
-            fname = f'{ipath}/{process}_{v}/{process}_{v}.h5'
+            fname = f'./samples/{tag}/{process}_{v}.h5'
         with h5py.File(fname, 'r') as fi:
-            x_test = torch.from_numpy(fi['features'][()]).float()
-            y = val(x_test).numpy().flatten()
-            print(fname)
-            print(y)
-        last_folder = ipath.split('/')[-1]
-        dirname = '/'.join(ipath.split('/')[:-1])+last_folder+'_inferred'
-        print("dirname",dirname)
-        os.system("mkdir -p /%s"%dirname)
-        hf = h5py.File(dirname+'/'+fname.split('/')[-1], 'w')
-        hf.create_dataset('features', data=y)
+            x_test = torch.from_numpy(fi['jet_features'][()]).float().to(device)
+            x_kin = fi['jet_kinematics'][()]
+            x_jettype = fi['jet_type'][()]
+            y = val(x_test)
+            #y = val(x_test).cpu().detach().numpy().flatten()
+            y = val(x_test).cpu().numpy().flatten()
+            #print(fname)
+            #print(y)
+        dirname = os.path.join(*fname.replace('samples','samples_inferred').split("/")[:-1])
+        #print(dirname)
+        subprocess.call("mkdir -p %s"%dirname,shell=True)
+        hf = h5py.File(fname.replace('samples','samples_inferred'), 'w')
+        hf.create_dataset('jet_features', data=y)
+        hf.create_dataset('jet_kinematics',data=x_kin)
+        hf.create_dataset('jet_type',data=x_jettype)
         hf.close()    
         
 

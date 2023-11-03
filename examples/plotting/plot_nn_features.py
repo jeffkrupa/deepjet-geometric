@@ -33,30 +33,30 @@ feature_labels = {
     5 : "NN feature 5", 
     6 : "NN feature 6", 
     7 : "NN feature 7", 
-    8 : "NN feature 8", 
-    9 : "NN feature 9", 
-    10 : "NN feature 10", 
-    11 : "NN feature 11", 
-    12 : "NN feature 12", 
-    13 : "NN feature 13", 
-    14 : "NN feature 14", 
-    15 : "NN feature 15", 
-    16 : "NN feature 16", 
-    17 : "NN feature 17", 
-    18 : "NN feature 18", 
-    19 : "NN feature 19", 
-    20 : "NN feature 20", 
-    21 : "NN feature 21", 
-    22 : "NN feature 22", 
-    23 : "NN feature 23", 
-    24 : "NN feature 24", 
-    25 : "NN feature 25", 
-    26 : "NN feature 26", 
-    27 : "NN feature 27", 
-    28 : "NN feature 28", 
-    29 : "NN feature 29", 
-    30 : "NN feature 30", 
-    31 : "NN feature 31", 
+    #    8 : "NN feature 8", 
+    #    9 : "NN feature 9", 
+    #    10 : "NN feature 10", 
+    #    11 : "NN feature 11", 
+    #    12 : "NN feature 12", 
+    #    13 : "NN feature 13", 
+    #    14 : "NN feature 14", 
+    #    15 : "NN feature 15", 
+    #    16 : "NN feature 16", 
+    #    17 : "NN feature 17", 
+    #    18 : "NN feature 18", 
+    #    19 : "NN feature 19", 
+    #    20 : "NN feature 20", 
+    #    21 : "NN feature 21", 
+    #    22 : "NN feature 22", 
+    #    23 : "NN feature 23", 
+    #    24 : "NN feature 24", 
+    #    25 : "NN feature 25", 
+    #    26 : "NN feature 26", 
+    #    27 : "NN feature 27", 
+    #    28 : "NN feature 28", 
+    #    29 : "NN feature 29", 
+    #    30 : "NN feature 30", 
+    #    31 : "NN feature 31", 
     32 : "$\mathrm{Jet\\ p_T}$",
     33 : "$\mathrm{Jet\\ \eta}$",
     34 : "$\mathrm{Jet\\ \phi}$",
@@ -199,7 +199,7 @@ def read_files(process,variation,variable):
             with h5py.File(i,'r') as f:
                 feature_arr = f['jet_features'][()]
                 #feature_arr = feature_arr[:,:8]
-                feature_arr[:,:len(feature_labels)-5] = normalize(feature_arr[:,:len(feature_labels)-5], axis=1)
+                #feature_arr[:,:len(feature_labels)-5] = normalize(feature_arr[:,:len(feature_labels)-5], axis=1)
                 #print(feature_arr.shape)
                 feat = feature_arr[:,variable]
                 #feat = normalize(feat, axis=1)#np.amax(feature_arr[:,:16], axis=1)
@@ -216,7 +216,7 @@ def read_files(process,variation,variable):
                     arr = np.concatenate((arr,feat))
         except:
             pass
-
+    arr
     return arr
 
 hist_dict = {}
@@ -310,14 +310,14 @@ ax.set_yscale('log')
 
 
 plot(ax,'qcd','nominal',whichfeat,[0.05,0.5,30],'springgreen','QCD')
-plot(ax,'higgs','nominal',whichfeat,[0.05,0.5,30],'indigo','Higgs')
+#plot(ax,'higgs','nominal',whichfeat,[0.05,0.5,30],'indigo','Higgs')
 
 plot(ax,'qcd','herwig',whichfeat,[0.05,0.5,30],'yellow','herwig',False)
 plot(ax,'qcd','fsrRenHi',whichfeat,[0.05,0.5,30],'yellow','fsrRenHi',False)
 plot(ax,'qcd','fsrRenLo',whichfeat,[0.05,0.5,30],'yellow','fsrRenLo',False)
-plot(ax,'higgs','herwig',whichfeat,[0.05,0.5,30],'yellow','herwig',False)
-plot(ax,'higgs','fsrRenHi',whichfeat,[0.05,0.5,30],'yellow','fsrRenHi',False)
-plot(ax,'higgs','fsrRenLo',whichfeat,[0.05,0.5,30],'yellow','fsrRenLo',False)
+#plot(ax,'higgs','herwig',whichfeat,[0.05,0.5,30],'yellow','herwig',False)
+#plot(ax,'higgs','fsrRenHi',whichfeat,[0.05,0.5,30],'yellow','fsrRenHi',False)
+#plot(ax,'higgs','fsrRenLo',whichfeat,[0.05,0.5,30],'yellow','fsrRenLo',False)
 
 print(binedges_global)
 #bins = np.linspace(binedges_global[0],binedges_global[1],30)

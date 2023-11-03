@@ -5,7 +5,7 @@ import subprocess
 import tqdm
 import pandas as pd
 
-from deepjet_geometric.datasets import CLV1
+from deepjet_geometric.datasets import CLV2
 from torch_geometric.data import DataLoader
 
 import os
@@ -21,6 +21,14 @@ parser.add_argument('--mse', action='store', type=str, help='MSE weight.')
 parser.add_argument('--var', action='store', type=str, help='Var weight.')
 parser.add_argument('--cov', action='store', type=str, help='Cov weight.')
 parser.add_argument('--nepochs', action='store', type=str, help='Number of epochs to train for.')
+parser.add_argument('--n_out_nodes', action='store', type=int, help='Number of output (encoded) nodes.')
+parser.add_argument('--qcd_only', action='store_true',default=False, help='Run on QCD only.')
+parser.add_argument('--seed_only', action='store_true',default=False, help='Run on seed only.')
+parser.add_argument('--dry_run', action='store_true',default=False, help='Only run on  one file.')
+parser.add_argument('--herwig_only', action='store_true',default=False, help='Run on herwig only.')
+parser.add_argument('--abseta', action='store_true',default=False, help='Run on abseta.')
+parser.add_argument('--which_augmentations', action='store',type=int,nargs='+',default=None, help='Run on these augmentations (0=seed, 1=fsrUp, 2=fsrDown, 3=herwig7)')
+parser.add_argument('--kinematics_only', action='store_true',default=False, help='Train on kinematics only.')
 args = parser.parse_args()
 print(args)
 weightMSE = float(args.mse)
@@ -29,9 +37,19 @@ weightCOV = float(args.cov)
 nepochs = int(args.nepochs)
 
 print(args.ipath)
-
-data_train = CLV1(args.ipath,ratio=True)
-data_test = CLV1(args.vpath,ratio=True)
+print("qcd only? ", args.qcd_only)
+print("seed only? ", args.seed_only)
+print("train with kinematics only? ", args.kinematics_only)
+print("train with abseta? ", args.abseta)
+print("which augmentations? " , args.which_augmentations)
+model_dir = args.opath
+if not os.path.exists(model_dir):
+    os.system("mkdir -p "+model_dir)
+    #subprocess.call("mkdir -p %s"%model_dir,shell=True)
+data_train = CLV2(args.ipath,args.qcd_only,args.seed_only,args.herwig_only,args.which_augmentations,args.kinematics_only,args.abseta, args.opath+"/train", args.dry_run)
+data_test = CLV2(args.vpath,args.qcd_only,args.seed_only,args.herwig_only,args.which_augmentations,args.kinematics_only,args.abseta, args.opath+"/test", args.dry_run)
+#data_train = CLV2(args.ipath,ratio=True)
+#data_test = CLV2(args.vpath,ratio=True)
 
 train_loader = DataLoader(data_train, batch_size=BATCHSIZE,shuffle=False,
                           follow_batch=['x_pf'])
@@ -94,7 +112,9 @@ class VICRegLoss(torch.nn.Module):
         x_scale = x
         y_scale = y
         repr_loss = F.mse_loss(x_scale, y_scale)
-        
+        #print("x_scale",x_scale.shape)
+        #print("x_scale.mean(dim=0)",x_scale.mean(dim=0).shape) 
+        #print("x_scale.mean(dim=1)",x_scale.mean(dim=1).shape) 
         #x = torch.cat(FullGatherLayer.apply(x), dim=0)
         #y = torch.cat(FullGatherLayer.apply(y), dim=0)
         x_scale = x_scale - x_scale.mean(dim=0)
@@ -123,19 +143,28 @@ class VICRegLoss(torch.nn.Module):
 
 
 class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        
+    def __init__(self, n_in_nodes, n_out_nodes):
+        super(Net, self, ).__init__()
+        print("n_in_nodes",n_in_nodes)
+        print("n_out_nodes",n_out_nodes) 
         hidden_dim = 128
-        
+        self.n_out_nodes = n_out_nodes  
         self.pf_encode = nn.Sequential(
-            nn.Linear(15, hidden_dim),
+            nn.Linear(n_in_nodes, hidden_dim),
             nn.ELU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ELU()
         )
-
-        self.conv = DynamicEdgeConv(
+     
+        self.conv1 = DynamicEdgeConv(
+            nn=nn.Sequential(nn.Linear(2*hidden_dim, hidden_dim), nn.ELU()),
+            k=24
+        )
+        self.conv2 = DynamicEdgeConv(
+            nn=nn.Sequential(nn.Linear(2*hidden_dim, hidden_dim), nn.ELU()),
+            k=24
+        )
+        self.conv3 = DynamicEdgeConv(
             nn=nn.Sequential(nn.Linear(2*hidden_dim, hidden_dim), nn.ELU()),
             k=24
         )
@@ -147,7 +176,7 @@ class Net(nn.Module):
             nn.ELU(),
             nn.Linear(32, 32),
             nn.ELU(),
-            nn.Linear(32, 8)#,
+            nn.Linear(32, self.n_out_nodes)#,
 #            nn.ELU(),
 #            nn.Linear(16, 8)
         )
@@ -156,14 +185,13 @@ class Net(nn.Module):
                 x_pf,
                 batch_pf):
         #print(x_ts)
-        #x_pf = BatchNorm(x_pf)
+        #x_pf = BatchNorm(x_pf) 
         x_pf_enc = self.pf_encode(x_pf)
-        
         # create a representation of LCs to LCs
-        feats1 = self.conv(x=(x_pf_enc, x_pf_enc), batch=(batch_pf, batch_pf))
-        feats2 = self.conv(x=(feats1, feats1), batch=(batch_pf, batch_pf))
+        feats1 = self.conv1(x=(x_pf_enc, x_pf_enc), batch=(batch_pf, batch_pf))
+        feats2 = self.conv2(x=(feats1, feats1), batch=(batch_pf, batch_pf))
         # similarly a representation LCs to Trackster
-        feats3 = self.conv(x=(feats2, feats2), batch=(batch_pf, batch_pf))
+        feats3 = self.conv3(x=(feats2, feats2), batch=(batch_pf, batch_pf))
 
 
         batch = batch_pf
@@ -176,8 +204,12 @@ class Net(nn.Module):
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
-
-cl = Net().to(device)
+n_out_nodes = int(args.n_out_nodes)
+if args.kinematics_only:
+    n_in_nodes=4
+else:
+    n_in_nodes=15
+cl = Net(n_in_nodes,n_out_nodes).to(device)
 #cl = DataParallel(cl)
 
 #puma.load_state_dict(torch.load(model_dir+"epoch-32.pt")['model'])
@@ -193,6 +225,10 @@ def train():
     counter = 0
 
     total_loss = 0
+    total_clr_loss = 0 
+    total_corr_loss = 0 
+    total_var_loss = 0 
+    clr_list, corr_list, var_list = [], [], []
     for data in tqdm.tqdm(train_loader):
         counter += 1
 
@@ -222,7 +258,12 @@ def train():
         #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].float())
         #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].reshape(-1,2)[:,:1].reshape(-1))
         #loss = contrastive_loss(out[0][0::2],out[0][1::2],0.1)
-        loss_clr,loss_corr,loss_var = vrloss(out[0][0::2],out[0][1::2]) 
+        loss_clr,loss_corr,loss_var = vrloss(out[0][0::2],out[0][1::2])
+
+        total_clr_loss += weightMSE*loss_clr.item()
+        total_corr_loss += weightCOV*loss_corr.item()
+        total_var_loss += weightVAR*loss_var.item()
+        #print(weightMSE*loss_clr,weightCOV*loss_corr,weightVAR*loss_var)
         loss = weightMSE*loss_clr + weightCOV*loss_corr + weightVAR*loss_var
         #print(data.y)
         #print(loss.item())
@@ -232,8 +273,10 @@ def train():
         optimizer.step()
         #if counter > 100:
         #    break
-        
-    return total_loss / len(train_loader.dataset)
+    clr_mean = np.array(clr_list).mean()
+    corr_mean = np.array(corr_list).mean()
+    var_mean = np.array(var_list).mean()        
+    return total_loss / len(train_loader.dataset), total_clr_loss / len(train_loader.dataset), total_corr_loss / len(train_loader.dataset), total_var_loss / len(train_loader.dataset)
 
 @torch.no_grad()
 def test():
@@ -255,7 +298,7 @@ def test():
             #loss = contrastive_loss(out[0][0::2],out[0][1::2],0.1)
             loss_clr,loss_corr,loss_var = vrloss(out[0][0::2],out[0][1::2])
             loss = weightMSE*loss_clr + weightCOV*loss_corr + weightVAR*loss_var
-
+            
             total_loss += loss.item()
             #if counter > 100:
             #    break
@@ -266,11 +309,11 @@ best_val_loss = 1e9
 all_train_loss = []
 all_val_loss = []
 
-loss_dict = {'train_loss': [], 'val_loss': []}
+loss_dict = {'train_loss': [], 'train_loss_mse':[], 'train_loss_corr':[], 'train_loss_var' :[], 'val_loss': [], }
 
 for epoch in range(1, nepochs):
     print(f'Training Epoch {epoch} on {len(train_loader.dataset)} jets')
-    loss = train()
+    loss, loss_clr, loss_corr, loss_var = train()
     scheduler.step()
 
     #exit(1)
@@ -278,12 +321,15 @@ for epoch in range(1, nepochs):
     print(f'Validating Epoch {epoch} on {len(test_loader.dataset)} jets')
     loss_val = test()
 
-    print('Epoch {:03d}, Loss: {:.8f}, ValLoss: {:.8f}'.format(
-        epoch, loss, loss_val))
+    print('Epoch {:03d}, Loss: {:.8f}, (CLR={:.8f}, CORR={:.8f}, VAR={:.8f}), ValLoss: {:.8f}'.format(
+        epoch, loss, loss_clr, loss_corr, loss_var, loss_val))
 
     all_train_loss.append(loss)
     all_val_loss.append(loss_val)
     loss_dict['train_loss'].append(loss)
+    loss_dict['train_loss_mse'].append(loss_clr)
+    loss_dict['train_loss_corr'].append(loss_corr)
+    loss_dict['train_loss_var'].append(loss_var)
     loss_dict['val_loss'].append(loss_val)
     df = pd.DataFrame.from_dict(loss_dict)
     

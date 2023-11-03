@@ -1,24 +1,35 @@
 #!/bin/bash
 
-while getopts ":t:n:" o; do
-    case "${o}" in
+while getopts ":t:n:i:o:p:" x; do
+    case "${x}" in
         t)
             t=${OPTARG}
             ;;
         n)
             n=${OPTARG}
             ;;
+	i)
+	    i=${OPTARG}
+	    ;;
+	o)
+	    o=${OPTARG}
+	    ;;
+	p)
+	    p=${OPTARG}
+	    ;;
     esac
 done
+echo ${output}
 shift $((OPTIND-1))
 echo "Training SIMCLR with temperature t=$t, for $n epochs"
-
-op="/work/tier3/jkrupa/cl/nov17_simclr_t${t}_fullData/"
+echo ${output}
+op="/work/tier3/jkrupa/cl/simclr_t${t}_d${o}_${p}/"
 
 echo "Outpath ${op}"
 python3 cl_v1_train_t0p1_nloss.py \
-	--ipath /work/tier3/jkrupa/cl/samples/nov17/merged_2/train/ \
-        --vpath /work/tier3/jkrupa/cl/samples/nov17/merged_2/val/ \
+	--ipath ${i}/train/ \
+        --vpath ${i}/val/ \
 	--opath ${op} \
-	--temperature $t \
-	--nepochs $n 
+	--temperature ${t} \
+	--nepochs ${n} \
+	--n_out_nodes ${o}

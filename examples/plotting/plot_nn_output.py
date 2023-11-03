@@ -10,21 +10,67 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 import awkward as ak
+import subprocess
 sns.set_context("paper")
 import mplhep as hep
 import json
+matplotlib.use('agg')
 import tqdm
 plt.style.use(hep.style.CMS)
-
+import argparse
 from matplotlib import gridspec
 fig_size = plt.rcParams["figure.figsize"]
 fig_size[0] = 9
 fig_size[1] = 9
 plt.rcParams["figure.figsize"] = fig_size
 
-whichfeat = 999
+parser = argparse.ArgumentParser()
+parser.add_argument('--ipath', action='store', type=str, help="Path to h5 files")
+parser.add_argument('--is_n2', action='store_true', default=False, help="Plotting N2")
+parser.add_argument('--which_qcd', action='store', type=str,help="All or specific qcd jet type 1..3, 5..8")
+parser.add_argument('--copy', action='store_true', default=False,help="Copy files")
 
-training = sys.argv[1]
+args = parser.parse_args()
+
+training = args.ipath 
+is_n2 = args.is_n2
+which_qcd = args.which_qcd
+if training.endswith('//'):
+    print('no slash at the end')
+    sys.exit()
+
+def copy_files_locally(path):
+
+    opath = path.split("/")[-2]
+    os.system(f"mkdir -p local_file_storage/{opath}")
+    abbreviated_path = path.replace("root://xrootd.cmsaf.mit.edu:1094","")
+    files = subprocess.Popen([f"xrdfs root://xrootd.cmsaf.mit.edu:1094 ls {abbreviated_path}"],stdout=subprocess.PIPE, shell=True).communicate()[0].decode("utf-8")
+    for f in str(files).split("\n"):
+
+        os.system(f"xrdcp root://xrootd.cmsaf.mit.edu:1094/{f} ./local_file_storage/{opath}/")
+
+    return f"local_file_storage/{opath}/"
+
+if training.startswith("davs://") or training.startswith("root://"):
+    if args.copy:
+        training = copy_files_locally(training)
+    else:
+        training = "local_file_storage/"+training.split("/")[-2]+"/"
+
+
+#training = sys.argv[1]
+#is_n2 = int(sys.argv[2])
+#which_qcd = sys.argv[3]
+
+print("training", training)
+print("is_n2",is_n2)
+print("which_qcd",which_qcd)
+if not any(which_qcd in ele for ele in ["all","1","2","3","5","6","7","8",]):
+  print("specify which_qcd")
+  sys.exit()
+whichfeat = 999
+if is_n2:
+    whichfeat = 'n2'
 
 def plot_binned_data(axes, binedges, data,
                *args, **kwargs):
@@ -149,26 +195,34 @@ def read_files(process,variation,variable):
     arr = None
     counter = 0
 
-    pattern = "/%s/%s_%s*h5"%(training,process,variation)
+    pattern = "%s/%s_%s*h5"%(training,process,variation)
     print(pattern)
     for i in tqdm.tqdm(glob.glob(pattern)):
         counter += 1
 
         #if counter > 5:
         #    break
-        
+        print(i)        
         try:
             with h5py.File(i,'r') as f:
-                feat = f['features'][()]
-                print(feat)
-                #print(feature_arr.shape)
+                if variable == 'n2':
+                    feat = f['jet_kinematics'][()][:,-1]
+                else:
+                    feat = f['jet_features'][()]
+                #print("hello",feat.shape)
+                if "qcd" in process and which_qcd != "all":
+                    feat = np.expand_dims(feat,axis=-1)
+                    tmp_jettype = f['jet_type'][()]
+                    feat = feat[tmp_jettype == int(which_qcd)]
+                    #print("feat",feat)
                 if arr is None:
                     arr = feat
                 else:
                     arr = np.concatenate((arr,feat))
+                print(feat.shape)
         except:
             pass
-    print("arr",arr)
+    print("arr",arr.shape)
     return arr
 
 hist_dict = {}
@@ -177,21 +231,30 @@ hist_dict = {}
 
 
 fig = plt.figure()
-gs = gridspec.GridSpec(5, 1, height_ratios=[1.8,0.5,0.5,0.5,0.5])
+gs = gridspec.GridSpec(7, 1, height_ratios=[1.8,0.5,0.5,0.5,0.5,0.5,0.5,])
 
 binedges_global = [0,1,30]
+if is_n2:
+    binedges_global = [0.02,0.48,30]
 
 def plot(axis,process,variation,variable,binedges,color,label,show=True):
 
     #print("In plotting function")
-    arr = read_files(process,variation,variable)
+    arr = read_files(process,variation,variable,)
 
 
-    tmpdict = {'val':arr}
+    tmpdict = {'val':np.squeeze(arr)}
     tmpdf = pd.DataFrame.from_dict(tmpdict)
-    print(f"{process}_{variation}_nnout_{training.split('/')[-3]}.csv")
-    tmpdf.to_csv(f"{process}_{variation}_nnout_{training.split('/')[-3]}.csv")
-
+    #print(tmpdf)
+    oname=f"./../samples_inferred/{training.split('/')[-2]}/{process}_{variation}_{training.split('/')[-2]}_{which_qcd}.csv"
+    
+    if is_n2:
+        os.system(f"mkdir -p ./../samples_inferred/{training.split('/')[-2]}_n2/") 
+        oname=f"./../samples_inferred/{training.split('/')[-2]}_n2/{process}_{variation}_{training.split('/')[-2]}_n2_{which_qcd}.csv"
+    #print(f"./../samples_inferred/{training.split('/')[-2]}/{process}_{variation}_nnout_{training.split('/')[-2]}_{variable}.csv")
+    #tmpdf.to_csv(f"./../samples_inferred/{training.split('/')[-2]}/{process}_{variation}_nnout_{training.split('/')[-2]}_{variable}.csv")
+    print(oname)
+    tmpdf.to_csv(oname)
 
     
     #if binedges_global[0] > np.min(arr):
@@ -228,7 +291,7 @@ def plot_ratio(axis,process1,variation1,process2,variation2,variable,binedges,co
     else:
         binentries = []
         for i in range(len(hist_dict[f'{str(variable)}_{process1}_{variation1}'][0])):
-            print(hist_dict[f'{str(variable)}_{process1}_{variation1}'][0][i])
+            #print(hist_dict[f'{str(variable)}_{process1}_{variation1}'][0][i])
             if hist_dict[f'{str(variable)}_{process1}_{variation1}'][0][i] == 0:
                 binentries.append(0)
             else:
@@ -251,6 +314,8 @@ ax_ratio1 = plt.subplot(gs[1])
 ax_ratio2 = plt.subplot(gs[2])
 ax_ratio3 = plt.subplot(gs[3])
 ax_ratio4 = plt.subplot(gs[4])
+ax_ratio5 = plt.subplot(gs[5])
+ax_ratio6 = plt.subplot(gs[6])
 ax.xaxis.set_zorder(99) 
 ax.set_yscale('log')
 
@@ -262,30 +327,53 @@ ax.set_yscale('log')
 #plot_binned_data(ax, bins, y_qcd, histtype="step",stacked=False,color='salmon',label='QCD',linewidth=1.3,rwidth=2)
 #plot_binned_data(ax, bins, y_higgs, histtype="step",stacked=False,color='midnightblue',label='Higgs',linewidth=1.3,rwidth=2)
 
-
-plot(ax,'qcd','nominal',whichfeat,[0.05,0.5,30],'salmon','QCD')
-
-
-plot(ax,'higgs','nominal',whichfeat,[0.05,0.5,30],'steelblue','Higgs')
+qcd_label = {
+  "all" : "QCD",
+  "1" : "q",
+  "2" : "c",
+  "3" : "b",
+  "5" : "g(qq)",
+  "6" : "g(cc)",
+  "7" : "g(bb)",
+  "8" : "g(gg)",
+}
+qcd_legend_label = "QCD"
+if which_qcd != 'all':
+    qcd_legend_label += " [{qcd_label[which_qcd]}]"
+plot(ax,'qcd','nominal',whichfeat,[0.05,0.5,30],'steelblue',f'QCD [{qcd_label[which_qcd]}]')
+plot(ax,'higgs','nominal',whichfeat,[0.05,0.5,30],'magenta','Higgs')
+plot(ax,'qcd','seed',whichfeat,[0.05,0.5,30],'yellow','seed',False)
+plot(ax,'higgs','seed',whichfeat,[0.05,0.5,30],'yellow','seed',False)
 plot(ax,'qcd','herwig',whichfeat,[0.05,0.5,30],'yellow','herwig',False)
 plot(ax,'qcd','fsrRenHi',whichfeat,[0.05,0.5,30],'yellow','fsrRenHi',False)
 plot(ax,'qcd','fsrRenLo',whichfeat,[0.05,0.5,30],'yellow','fsrRenLo',False)
 plot(ax,'higgs','herwig',whichfeat,[0.05,0.5,30],'yellow','herwig',False)
 plot(ax,'higgs','fsrRenHi',whichfeat,[0.05,0.5,30],'yellow','fsrRenHi',False)
 plot(ax,'higgs','fsrRenLo',whichfeat,[0.05,0.5,30],'yellow','fsrRenLo',False)
-
-print(binedges_global)
+#print(hist_dict.keys())
+#print(binedges_global)
 #bins = np.linspace(binedges_global[0],binedges_global[1],30)
-
-ax_ratio4.set_xlabel("NN output")
+label = "NN output"
+if is_n2:
+    label = "$N_2$"
+ax_ratio6.set_xlabel(label)
 ax.set_ylabel("Norm. to unit area",fontsize=21)
 ax.legend(loc=(0.4,0.2))
 
-plot_ratio(ax_ratio1,'qcd','nominal','qcd','fsrRenHi',whichfeat,[0.05,0.5,30],'salmon',"$\mu(FSR)$ [QCD]",doboth=True,other='fsrRenLo')
-plot_ratio(ax_ratio2,'higgs','nominal','higgs','fsrRenHi',whichfeat,[0.05,0.5,30],'steelblue',"$\mu(FSR)$ [Higgs]",doboth=True,other='fsrRenLo')
-plot_ratio(ax_ratio3,'qcd','nominal','qcd','herwig',whichfeat,[0.05,0.5,30],'salmon',"Herwig7 [QCD]")
-plot_ratio(ax_ratio4,'higgs','nominal','higgs','herwig',whichfeat,[0.05,0.5,30],'steelblue',"Herwig7 [Higgs]")
+#plot_ratio(ax_ratio1,'qcd','nominal','qcd','fsrRenHi',whichfeat,[0.05,0.5,30],'salmon',"$\mu(FSR)$ [QCD]",doboth=True,other='fsrRenLo')
+#plot_ratio(ax_ratio2,'higgs','nominal','higgs','fsrRenHi',whichfeat,[0.05,0.5,30],'steelblue',"$\mu(FSR)$ [Higgs]",doboth=True,other='fsrRenLo')
+#plot_ratio(ax_ratio3,'qcd','nominal','qcd','herwig',whichfeat,[0.05,0.5,30],'salmon',"Herwig7 [QCD]")
+#plot_ratio(ax_ratio4,'higgs','nominal','higgs','herwig',whichfeat,[0.05,0.5,30],'steelblue',"Herwig7 [Higgs]")
+NBINS=30
 
+
+plot_ratio(ax_ratio1,'qcd','nominal','qcd','seed',whichfeat,[0.05,0.5,NBINS],'springgreen',f"seed [{qcd_label[which_qcd]}]")
+plot_ratio(ax_ratio2,'higgs','nominal','higgs','seed',whichfeat,[0.05,0.5,NBINS],'indigo',f"seed [H]",)
+plot_ratio(ax_ratio3,'qcd','nominal','qcd','fsrRenHi',whichfeat,[0.05,0.5,NBINS],'springgreen',f"FSR [{qcd_label[which_qcd]}]",doboth=True,other='fsrRenLo')
+plot_ratio(ax_ratio4,'higgs','nominal','higgs','fsrRenHi',whichfeat,[0.05,0.5,NBINS],'indigo',f"FSR [H]",doboth=True,other='fsrRenLo')
+plot_ratio(ax_ratio5,'qcd','nominal','qcd','herwig',whichfeat,[0.05,0.5,NBINS],'springgreen',f"Herwig7 [{qcd_label[which_qcd]}]")
+plot_ratio(ax_ratio6,'higgs','nominal','higgs','herwig',whichfeat,[0.05,0.5,NBINS],'indigo',f"Herwig7 [H]")
+axxes = [ax_ratio1,ax_ratio2,ax_ratio3,ax_ratio4,ax_ratio5,ax_ratio6]
 
 #print(hist_dict)
 
@@ -294,21 +382,30 @@ fig.subplots_adjust(hspace=0.00)
 ax.set_xlim([binedges_global[0],binedges_global[1]])
 ax.xaxis.set_ticklabels([])
 
-axxes = [ax_ratio1,ax_ratio2,ax_ratio3,ax_ratio4]
+#axxes = [ax_ratio1,ax_ratio2,ax_ratio3,ax_ratio4]
 for axx in axxes:
     if axx == axxes[0]:
         axx.set_ylabel("Variation/Nominal",fontsize=13)
     if axx != axxes[-1]:
         axx.xaxis.set_ticklabels([])
-    axx.set_xlim([binedges_global[0],binedges_global[1]])
-    axx.set_ylim([0.4,1.6])
+    if axx == axxes[-1] or axx == axxes[-2]:
+        axx.set_ylim([0.,2.])
+    else:
+        axx.set_ylim([0.9,1.1])
+    axx.set_xlim([binedges_global[0],binedges_global[1]]) 
     #axx.yaxis.set_ticklabels(['0.5','1.0','1.5'],fontsize=12)
     axx.tick_params(axis='y', which='major', labelsize=12)
     axx.axhline(y=1, linestyle='dashed',color='k')
 
-print(f"/home/tier3/jkrupa/public_html/cl/{training.split('/')[-3]}/nn_output.png")
-os.system(f"mkdir -p /home/tier3/jkrupa/public_html/cl/{training.split('/')[-3]}/") 
-plt.savefig(f"/home/tier3/jkrupa/public_html/cl/{training.split('/')[-3]}/nn_output.png",dpi=300,bbox_inches='tight')
-plt.savefig(f"/home/tier3/jkrupa/public_html/cl/{training.split('/')[-3]}/nn_output.pdf",dpi=300,bbox_inches='tight')
+label = "nn_output"
+if is_n2:
+    label = "n2_output"
+if which_qcd != "all":
+    label = label+"_"+which_qcd
+
+print(f"/home/submit/jkrupa/public_html/cl/{training.split('/')[-2]}/{label}.png")
+os.system(f"mkdir -p /home/submit/jkrupa/public_html/cl/{training.split('/')[-2]}/") 
+plt.savefig(f"/home/submit/jkrupa/public_html/cl/{training.split('/')[-2]}/{label}.png",dpi=300,bbox_inches='tight')
+plt.savefig(f"/home/submit/jkrupa/public_html/cl/{training.split('/')[-2]}/{label}.pdf",dpi=300,bbox_inches='tight')
 
 
