@@ -73,7 +73,7 @@ contains() {
 
 # Call contains function to check for --fix_weights and --fully_supervised in the PYTHON_ARGS
 FIX_WEIGHTS=$(contains "${PYTHON_ARGS[@]}" "--fix_weights")
-FULLY_SUPERVISED=$(contains "${PYTHON_ARGS[@]}" "--fully_supervised")
+FULLY_SUPERVISED=$(contains "${PYTHON_ARGS[@]}" "--fs_train")
 ONE_LAYER_MLP=$(contains "${PYTHON_ARGS[@]}" "--one_layer_MLP")
 # Echo out the current settings
 echo "Current settings:"
@@ -89,19 +89,19 @@ echo "ONE_LAYER_MLP: ${ONE_LAYER_MLP}"
 OLD_IFS="$IFS"
 IFS='' opath="nov23/Graph-ntrain=${NTRAIN},augs=${WHICH_AUGMENTATIONS[*]}"
 IFS="$OLD_IFS"
-if [[ $FULLY_SUPERVISED == true ]]; then
+if [[ "$FULLY_SUPERVISED" == "True" ]]; then
    opath="$opath,fully-supervised"
 else
    opath="$opath,fine-tuned"
 fi
 
-if [[ $FIX_WEIGHTS == true ]]; then
+if [[ $FIX_WEIGHTS == "True" ]]; then
    opath="$opath,fixed_weights"
 else
    opath="$opath,floating_weights"
 fi
 
-if [[ $ONE_LAYER_MLP == true ]]; then
+if [[ "$ONE_LAYER_MLP" == "True" ]]; then
    opath="$opath,onelayerMLP"
 else
    opath="$opath,fivelayerMLP"
@@ -109,7 +109,9 @@ fi
 
 path_without_file="${MPATH%/*}"
 extracted_dir="${path_without_file##*/}"
-opath="$opath,RS3Lbase=${extracted_dir}"
+if [[ "$FULLY_SUPERVISED" == "False" ]]; then 
+   opath="$opath,RS3Lbase=${extracted_dir}"
+fi
 
 if [ -d "$opath" ]; then
    echo "path already exists. remove it with:"
@@ -119,5 +121,5 @@ fi
 PYTHON_ARGS+=("--opath" "${opath}")
 
 mkdir -p ${opath}
-echo python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/train/ --vpath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/val/ --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 1e4 --lr 0.0001 --batchsize 1000 --fine_tuning "${PYTHON_ARGS[@]}" "${POSITIONAL_ARGS[@]}" > ${opath}/runcommand.sh
-python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/train/ --vpath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/val/ --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 1e4 --lr 0.0001 --batchsize 1000 --fine_tuning "${PYTHON_ARGS[@]}" "${POSITIONAL_ARGS[@]}" > $opath/output.txt 2>&1
+echo python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/train/ --vpath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/val/ --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 2e6 --lr 0.0001 --batchsize 1000 --fine_tuning "${PYTHON_ARGS[@]}" "${POSITIONAL_ARGS[@]}" > ${opath}/runcommand.sh
+python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/train/ --vpath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/val/ --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 2e6 --lr 0.0001 --batchsize 1000 --fine_tuning "${PYTHON_ARGS[@]}" "${POSITIONAL_ARGS[@]}" > $opath/output.txt 2>&1
