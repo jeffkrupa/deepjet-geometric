@@ -61,7 +61,7 @@ if [[ -n "$NEPOCHS" && "$NEPOCHS" -le "$LATEST_EPOCH" ]]; then
 fi
 
 # Construct the Python command
-PYTHON_CMD="python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/train/ --vpath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/val/ --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 2e6 --lr 0.0001 --batchsize 1000 --fine_tuning --nepochs ${NEPOCHS} --Nmaxsample_train ${NTRAIN} --which_augmentations ${AUGS} ${FULLY_SUPERVISED} ${FIX_WEIGHTS} ${LAYERS} ${CONTINUE_TRAINING} --mpath \"${LATEST_MODEL}\""
+PYTHON_CMD="python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/train/ --vpath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/val/ --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 2e6 --lr 0.0001 --batchsize 1000 --fine_tuning --nepochs ${NEPOCHS} --Nmaxsample_train ${NTRAIN} --which_augmentations ${AUGS} ${FULLY_SUPERVISED} ${FIX_WEIGHTS} ${LAYERS} ${CONTINUE_TRAINING} --opath ${OPATH} --mpath \"${LATEST_MODEL}\""
 
 # Execute the Python command
 echo "Running command: $PYTHON_CMD"
