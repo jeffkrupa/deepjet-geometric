@@ -172,7 +172,7 @@ class CLV2_Nate2(Dataset):
                         tmp_features = tmp_features[0::2]
                         tmp_jettype = tmp_jettype[0::2]
                     else:
-                        print("we're here")
+                        #print("we're here")
                         if self.which_augmentations is not None:
                             idxs_to_keep = np.zeros(len(tmp_features),dtype=int)
                             for augmentation in self.which_augmentations:

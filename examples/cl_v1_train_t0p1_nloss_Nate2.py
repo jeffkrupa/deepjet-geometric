@@ -601,6 +601,10 @@ else:
     start_epoch = 1
     loss_dict = {'train_loss': [], 'val_loss': []}
 
+best_val_loss = float('inf')
+epochs_no_improve = 0
+n_epochs_stop = 20  # Number of epochs to stop after no improvement
+
 for epoch in range(start_epoch, nepochs):
     print(f'Training Epoch {epoch} on {len(train_loader.dataset)} jets')
     loss = train()
@@ -626,18 +630,47 @@ for epoch in range(start_epoch, nepochs):
     if not args.fine_tuning:
         torch.save(state_dicts, os.path.join(model_dir, f'epoch-{epoch}.pt'))
 
+
+        if loss_val < best_val_loss:
+            print('Validation loss decreased ({:.6f} --> {:.6f}). Saving model!'.format(best_val_loss, loss_val))
+            best_val_loss = loss_val
+            # Reset the no improvement count
+            epochs_no_improve = 0
+            # Save the best model state
+            torch.save(state_dicts, os.path.join(model_dir, 'best-epoch.pt'))
+        else:
+            # Increment the count of epochs with no improvement
+            epochs_no_improve += 1
+        '''
         if loss_val < best_val_loss:
             best_val_loss = loss_val
 
             torch.save(state_dicts, os.path.join(model_dir, 'best-epoch.pt'.format(epoch)))
+        '''
     else:
         torch.save(state_dicts, os.path.join(model_dir, f'FT_epoch-{epoch}.pt'))
 
         if loss_val < best_val_loss:
+            print('Validation loss decreased ({:.6f} --> {:.6f}). Saving model!'.format(best_val_loss, loss_val))
+            best_val_loss = loss_val
+            # Reset the no improvement count
+            epochs_no_improve = 0
+            # Save the best model state with fine-tuning
+            torch.save(state_dicts, os.path.join(model_dir, 'FT_best-epoch.pt'))
+        else:
+            # Increment the count of epochs with no improvement
+            epochs_no_improve += 1
+        '''
+        if loss_val < best_val_loss:
             best_val_loss = loss_val
 
             torch.save(state_dicts, os.path.join(model_dir, 'FT_best-epoch.pt'.format(epoch)))
+        '''
 
+    # Early stopping check
+    if epochs_no_improve >= n_epochs_stop:
+        print('Early stopping triggered after {} epochs without improvement'.format(n_epochs_stop))
+        break  # Break the loop and stop training
 #make_plots(gvq = args.gvq)
 
 

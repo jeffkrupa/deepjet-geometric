@@ -42,10 +42,10 @@ while [[ $# -gt 0 ]]; do
               WHICH_AUGMENTATIONS+=("$1"); shift;
       done
       ;;
-    #-*|--*)
-    #  echo "Unknown option $1"
-    #  exit 1
-    #  ;;
+    -*|--*)
+      echo "Unknown option $1"
+      return 0 2>/dev/null || exit 0
+      ;;
     *)
       POSITIONAL_ARGS+=("$1") # save positional arg
       shift # past argument
@@ -128,6 +128,7 @@ if [[ "$FULLY_SUPERVISED" == "False" ]]; then
 fi
 
 opath=$(increment_suffix "$opath" "$opath")
+echo "OPATH: ${opath}"
 
 #if [ -d "$opath" ]; then
 #   echo "path already exists. remove it with:"
@@ -136,10 +137,9 @@ opath=$(increment_suffix "$opath" "$opath")
 #fi
 PYTHON_ARGS+=("--opath" "${opath}")
 
-echo "New directory created: ${opath}"
-return 0 2>/dev/null || exit 0
-
 mkdir -p ${opath}
 echo "New directory created: ${opath}"
+
+cp cl_v1_train_t0p1_nloss_Nate2.py ${opath}
 echo python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/train/ --vpath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/val/ --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 2e6 --lr 0.0001 --batchsize 1000 --fine_tuning "${PYTHON_ARGS[@]}" "${POSITIONAL_ARGS[@]}" > ${opath}/runcommand.sh
 python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/train/ --vpath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/val/ --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 2e6 --lr 0.0001 --batchsize 1000 --fine_tuning "${PYTHON_ARGS[@]}" "${POSITIONAL_ARGS[@]}" > $opath/output.txt 2>&1
