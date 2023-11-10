@@ -19,7 +19,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "Unknown option $1"
-      exit 1
+      return 0 2>/dev/null || exit 0
       ;;
   esac
 done
@@ -61,11 +61,15 @@ if [[ -n "$NEPOCHS" && "$NEPOCHS" -le "$LATEST_EPOCH" ]]; then
 fi
 
 # Construct the Python command
-PYTHON_CMD="python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/train/ --vpath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/val/ --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 2e6 --lr 0.0001 --batchsize 1000 --fine_tuning --nepochs ${NEPOCHS} --Nmaxsample_train ${NTRAIN} --which_augmentations ${AUGS} ${FULLY_SUPERVISED} ${FIX_WEIGHTS} ${LAYERS} ${CONTINUE_TRAINING} --opath ${OPATH} --mpath \"${LATEST_MODEL}\""
+PYTHON_CMD="python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/train/ --vpath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/val/ --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 2e6 --lr 0.0001 --batchsize 1000 --fine_tuning --nepochs ${NEPOCHS} --Nmaxsample_train ${NTRAIN} --which_augmentations ${AUGS} ${FULLY_SUPERVISED} ${FIX_WEIGHTS} ${LAYERS} ${CONTINUE_TRAINING} --opath ${OPATH} --mpath \"${LATEST_MODEL}\"" >> ${OPATH}/output.txt 
 
 # Execute the Python command
 echo "Running command: $PYTHON_CMD"
 #eval $PYTHON_CMD
 
 # End of the script
+
+#curl  -X POST -H 'Content-type: application/json' \
+# --data '{"text":"Training Job Completed on '"$(hostname)"', tmux-session '"$(echo $TMUX | cut -d ',' -f 3)"'."}' \
+# https://hooks.slack.com/services/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
 

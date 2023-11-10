@@ -143,3 +143,9 @@ echo "New directory created: ${opath}"
 cp cl_v1_train_t0p1_nloss_Nate2.py ${opath}
 echo python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/train/ --vpath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/val/ --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 2e6 --lr 0.0001 --batchsize 1000 --fine_tuning "${PYTHON_ARGS[@]}" "${POSITIONAL_ARGS[@]}" > ${opath}/runcommand.sh
 python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/train/ --vpath /work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/val/ --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 2e6 --lr 0.0001 --batchsize 1000 --fine_tuning "${PYTHON_ARGS[@]}" "${POSITIONAL_ARGS[@]}" > $opath/output.txt 2>&1
+
+
+curl  -X POST -H 'Content-type: application/json' \
+ --data '{"text":"Training Job Completed on '"$(hostname)"', tmux-session '"$(tmux display-message -p '#S')"'."}' \
+ https://hooks.slack.com/services/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
+
