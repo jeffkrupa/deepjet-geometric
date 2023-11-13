@@ -51,6 +51,7 @@ parser.add_argument('--is_trans',action='store_true',default=False)
 parser.add_argument('--fs_train',action='store_true',default="False",help='Pass this if you are using fully supervised training')
 parser.add_argument('--zbb_qcd',action='store_true',default=False,help = 'Pass this if you wish to train Z_bb vs QCD')
 parser.add_argument('--top_zbb',action='store_true',default=False,help = 'Pass this if you wish to train top vs Z_bb')
+parser.add_argument('--wz_zz',action='store_true',default=False,help = 'Pass this if you wish to train wz vs zlightlight')
 parser.add_argument('--all_augmentations',action='store_true',default=False,help = 'Pass this if you wish to train all augs (used with ft_with_p_h)')
 parser.add_argument('--add_reseeded',action='store_true',default=False,)
 parser.add_argument('--add_fsr',action='store_true',default=False,)
@@ -594,16 +595,16 @@ all_val_loss = []
 
 
 if args.continue_training:
-    cut_path = args.mpath.rsplit('/', 2)[0] + '/'
-    loss_dict = {'train_loss': pd.read_csv(os.path.join(cut_path,'loss.csv'))['train_loss'].tolist(), 
- 'val_loss': pd.read_csv(os.path.join(cut_path,'loss.csv'))['val_loss'].tolist()}
+    #cut_path = args.mpath.rsplit('/', 2)[0] + '/'
+    loss_dict = {'train_loss': pd.read_csv(os.path.join(args.opath,'loss.csv'))['train_loss'].tolist(), 
+                 'val_loss': pd.read_csv(os.path.join(args.opath,'loss.csv'))['val_loss'].tolist()}
 else:
     start_epoch = 1
     loss_dict = {'train_loss': [], 'val_loss': []}
 
 best_val_loss = float('inf')
 epochs_no_improve = 0
-n_epochs_stop = 20  # Number of epochs to stop after no improvement
+n_epochs_stop = 40  # Number of epochs to stop after no improvement
 
 for epoch in range(start_epoch, nepochs):
     print(f'Training Epoch {epoch} on {len(train_loader.dataset)} jets')

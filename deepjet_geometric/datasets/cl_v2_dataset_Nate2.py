@@ -42,6 +42,9 @@ class CLV2_Nate2(Dataset):
         if args.top_zbb:
             print("# of zbb jets={}, {:.2f}%".format(np.sum(self.data_jettype==0), 100*np.sum(self.data_jettype==0)/len(self.data_jettype)))
             print("# of top jets={}, {:.2f}%".format(np.sum(self.data_jettype==1), 100*np.sum(self.data_jettype==1)/len(self.data_jettype)))
+        elif args.wz_zz:
+            print("# of zzlightlight jets={}, {:.2f}%".format(np.sum(self.data_jettype==0), 100*np.sum(self.data_jettype==0)/len(self.data_jettype)))
+            print("# of wz jets={}, {:.2f}%".format(np.sum(self.data_jettype==1), 100*np.sum(self.data_jettype==1)/len(self.data_jettype)))
         else:
             print("# of q jets={}, {:.2f}%".format(np.sum(self.data_jettype==1), 100*np.sum(self.data_jettype==1)/len(self.data_jettype)))
             print("# of c jets={}, {:.2f}%".format(np.sum(self.data_jettype==2), 100*np.sum(self.data_jettype==2)/len(self.data_jettype)))
@@ -62,7 +65,7 @@ class CLV2_Nate2(Dataset):
         print("# of herwig jets={}, {:.2f}%".format(np.sum(self.data_vartype==3), 100*np.sum(self.data_vartype==3)/len(self.data_vartype)))
         sys.stdout.close()
         sys.stdout=stdoutOrigin
-   
+        #sys.exit(1) 
     def fill_data(self):
         #add the files from /work/tier3/jkrupa/cl/samples/mar20/outfiles/contrastive_train
 #         if self.add_SSL:
@@ -151,7 +154,9 @@ class CLV2_Nate2(Dataset):
                 elif self.args.top_zbb:
                     tmp_jettype[tmp_jettype == 9] = 0
                     tmp_jettype[tmp_jettype == 11] = 1
-
+                elif self.args.wz_zz:
+                    tmp_jettype[tmp_jettype == 10] = 0 
+                    tmp_jettype[tmp_jettype == 11] = 1 
                 if self.args.fine_tuning:
                      
                      #if ft_with_p_h, we filter out all vartypes that are not class 0 or 3
