@@ -138,7 +138,7 @@ if [[ "$WZ_ZZ" == "True" ]]; then
    ipath="/work/tier3/jkrupa/cl/samples/mar20/wz-vs-zz/train/"
    vpath="/work/tier3/jkrupa/cl/samples/mar20/wz-vs-zz/val/"
 else
-   opath="$opath,h_qzd"
+   opath="$opath,h_qcd"
    ipath="/work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/train/"
    vpath="/work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/val/"
 fi
