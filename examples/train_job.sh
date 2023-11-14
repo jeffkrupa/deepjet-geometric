@@ -133,14 +133,20 @@ else
    opath="$opath,fivelayerMLP"
 fi
 
+if [[ "$(hostname)" == *"satori"* ]]; then
+   basepath="/nobackup/users/bmaier/rs3l/"
+else   
+   basepath="/work/tier3/jkrupa/cl/samples/"
+fi
+
 if [[ "$WZ_ZZ" == "True" ]]; then
    opath="$opath,wz_zz"
-   ipath="/work/tier3/jkrupa/cl/samples/mar20/wz-vs-zz/train/"
-   vpath="/work/tier3/jkrupa/cl/samples/mar20/wz-vs-zz/val/"
+   ipath="$basepath/mar20/wz-vs-zz/train/"
+   vpath="$basepath/mar20/wz-vs-zz/val/"
 else
    opath="$opath,h_qcd"
-   ipath="/work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/train/"
-   vpath="/work/tier3/jkrupa/cl/samples/mar20_finetuning/outfiles/val/"
+   ipath="$basepath/mar20_finetuning/outfiles/train/"
+   vpath="$basepath/mar20_finetuning/outfiles/val/"
 fi
 
 path_without_file="${MPATH%/*}"
@@ -162,12 +168,12 @@ PYTHON_ARGS+=("--opath" "${opath}")
 mkdir -p ${opath}
 echo "New directory created: ${opath}"
 
-cd /work/tier3/jkrupa/cl/deepjet-geometric/examples
+#cd /work/tier3/jkrupa/cl/deepjet-geometric/examples
 
 cp cl_v1_train_t0p1_nloss_Nate2.py ${opath}
 
 
-echo python3 /work/tier3/jkrupa/cl/deepjet-geometric/examples/cl_v1_train_t0p1_nloss_Nate2.py --ipath ${ipath} --vpath ${vpath} --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --lr 0.0001 --batchsize 1000 --fine_tuning "${PYTHON_ARGS[@]}" "${POSITIONAL_ARGS[@]}" > ${opath}/runcommand.sh
+echo python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath ${ipath} --vpath ${vpath} --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --lr 0.0001 --batchsize 1000 --fine_tuning "${PYTHON_ARGS[@]}" "${POSITIONAL_ARGS[@]}" > ${opath}/runcommand.sh
 
 
 rm ${opath}/sub.sh
@@ -178,10 +184,18 @@ echo "#SBATCH -o rs3l_1GPUs_%j.out ">> ${opath}/sub.sh
 echo "#SBATCH -e rs3l_1GPUs_%j.err ">> ${opath}/sub.sh
 echo "#SBATCH --mail-user=jkrupa@mit.edu ">> ${opath}/sub.sh
 echo "#SBATCH --mail-type=ALL ">> ${opath}/sub.sh
-echo "#SBATCH --gpus-per-node=1 ">> ${opath}/sub.sh
-echo "#SBATCH --cpus-per-gpu=1 ">> ${opath}/sub.sh
-echo "#SBATCH --time=120:00:00 ">> ${opath}/sub.sh
-echo "#SBATCH --partition=submit-gpu ">> ${opath}/sub.sh
+if [[ "$(hostname)" == *"satori"* ]]; then
+    #echo "#SBATCH --qos=sched_level_2" >> ${opath}/sub.sh
+    #echo "#SBATCH --partition=sched_system_all_8" >> ${opath}/sub.sh
+    echo "#SBATCH --time=24:00:00 ">> ${opath}/sub.sh
+    echo "#SBATCH --mem=100G" >> ${opath}/sub.sh
+    echo "#SBATCH --gres=gpu:1" >> ${opath}/sub.sh
+    #echo "#SBATCH --gpus-per-node=1" >> ${opath}/sub.sh
+    echo "#SBATCH --nodes=1" >> ${opath}/sub.sh
+else
+    echo "#SBATCH --partition=submit-gpu ">> ${opath}/sub.sh
+    echo "#SBATCH --time=96:00:00 ">> ${opath}/sub.sh
+fi 
 #
 
 ## Number of total processes
@@ -191,14 +205,30 @@ echo " echo Number of nodes:= " $SLURM_JOB_NUM_NODES >> ${opath}/sub.sh
 echo " echo GPUs per node:= " $SLURM_JOB_GPUS >> ${opath}/sub.sh
 echo " echo Ntasks per node:= "  $SLURM_NTASKS_PER_NODE >> ${opath}/sub.sh
 
+if [[ "$(hostname)" == *"satori"* ]]; then
+    ## User python environment
+    echo 'HOME2=/nobackup/users/bmaier/rs3l/' >> ${opath}/sub.sh
+    echo 'PYTHON_VIRTUAL_ENVIRONMENT=rs3l38' >> ${opath}/sub.sh
+    echo 'CONDA_ROOT=$HOME2/anaconda3' >> ${opath}/sub.sh
 
-echo "singularity exec --nv --env PYTHONPATH=\"/work/tier3/jkrupa/cl/deepjet-geometric/\" --bind /work/tier3/nswood/cl/ --bind /work/tier3/jkrupa/cl /work/tier3/bmaier/sandboxes/geometricdl.sif $(cat ${opath}/runcommand.sh) > ${opath}/output.txt" >> ${opath}/sub.sh
+    ## Activate WMLCE virtual environment
+    echo 'source ${CONDA_ROOT}/etc/profile.d/conda.sh ' >> ${opath}/sub.sh
+    echo 'conda activate $PYTHON_VIRTUAL_ENVIRONMENT' >> ${opath}/sub.sh
+
+    echo "cd /home/$(whoami)/rs3l/deepjet-geometric/" >> ${opath}/sub.sh
+    echo 'export PYTHONPATH=${PYTHONPATH}:${PWD}' >> ${opath}/sub.sh
+    echo "cd /home/$(whoami)/rs3l/deepjet-geometric/examples/" >> ${opath}/sub.sh
+    echo "$(cat ${opath}/runcommand.sh) > ${opath}/output.txt" >> ${opath}/sub.sh
+else
+    echo "singularity exec --nv --env PYTHONPATH=\"/work/tier3/jkrupa/cl/deepjet-geometric/\" --bind /work/tier3/nswood/cl/ --bind /work/tier3/jkrupa/cl /work/tier3/bmaier/sandboxes/geometricdl.sif $(cat ${opath}/runcommand.sh) > ${opath}/output.txt" >> ${opath}/sub.sh
+fi
+   
 #echo "singularity exec --nv --env PYTHONPATH="/work/tier3/jkrupa/cl/deepjet-geometric/" --bind /work/tier3/nswood/cl/ --bind /work/tier3/jkrupa/cl /work/tier3/bmaier/sandboxes/geometricdl.sif "python3 $(echo ${opath}/runcommand.sh)  > $opath/output.txt"" >> ${opath}/sub.sh
 
 echo "echo "Run completed at:- "" >>${opath}/sub.sh
 echo date >> ${opath}/sub.sh
 
-sbatch ${opath}/sub.sh
+#sbatch ${opath}/sub.sh
 
 #curl  -X POST -H 'Content-type: application/json' \
 # --data '{"text":"Training Job Completed on '"$(hostname)"', tmux-session '"$(tmux display-message -p '#S')"'."}' \
