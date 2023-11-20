@@ -71,6 +71,13 @@ print("train with abseta? ", args.abseta)
 print("which augmentations? " , args.which_augmentations)
 print("fine tuning? " , args.fine_tuning)
 
+if args.continue_training:
+    if "199" in args.mpath:
+        print("Epoch 200 already reached. Exiting...")
+        sys.exit()
+
+
+
 model_dir = args.opath
 if not os.path.exists(model_dir):
         os.system("mkdir -p "+model_dir)
@@ -604,7 +611,7 @@ else:
 
 best_val_loss = float('inf')
 epochs_no_improve = 0
-n_epochs_stop = 40  # Number of epochs to stop after no improvement
+n_epochs_stop = 999  # Number of epochs to stop after no improvement
 
 for epoch in range(start_epoch, nepochs):
     print(f'Training Epoch {epoch} on {len(train_loader.dataset)} jets')
