@@ -68,9 +68,19 @@ else
    basepath="/work/tier3/jkrupa/cl/samples/"
 fi
 
+if [[ "$WZ_ZZ" == "True" ]]; then
+   opath="$opath,wz_zz"
+   ipath="$basepath/mar20/wz-vs-zz/train/"
+   vpath="$basepath/mar20/wz-vs-zz/val/"
+else
+   opath="$opath,h_qcd"
+   ipath="$basepath/mar20_finetuning/outfiles/train/"
+   vpath="$basepath/mar20_finetuning/outfiles/val/"
+fi
+
 
 # Construct the Python command
-PYTHON_CMD="python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath ${basepath}/mar20_finetuning/outfiles/train/ --vpath ${basepath}/mar20_finetuning/outfiles/val/ --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 2e6 --lr 0.0001 --batchsize 1000 --fine_tuning --nepochs ${NEPOCHS} --Nmaxsample_train ${NTRAIN} --which_augmentations "$(echo "$AUGS" | sed 's/./& /g' | sed 's/ $//')" ${FULLY_SUPERVISED} ${FIX_WEIGHTS} ${LAYERS} ${CONTINUE_TRAINING} --opath ${OPATH} --mpath \"${LATEST_MODEL}\"" 
+PYTHON_CMD="python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath ${ipath} --vpath ${vpath} --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 2e6 --lr 0.0001 --batchsize 1000 --fine_tuning --nepochs ${NEPOCHS} --Nmaxsample_train ${NTRAIN} --which_augmentations "$(echo "$AUGS" | sed 's/./& /g' | sed 's/ $//')" ${FULLY_SUPERVISED} ${FIX_WEIGHTS} ${LAYERS} ${CONTINUE_TRAINING} --opath ${OPATH} --mpath \"${LATEST_MODEL}\"" 
 
 # Execute the Python command
 echo "Running command:" >>  ${OPATH}/output.txt
@@ -102,8 +112,9 @@ if [[ "$(hostname)" == *"satori"* ]]; then
     #echo "#SBATCH --gpus-per-node=1" >> ${opath}/sub.sh
     echo "#SBATCH --nodes=1" >> ${opath}/sub.sh
 else
+    echo "#SBATCH --gres=gpu:1 " >> ${opath}/sub.sh
     echo "#SBATCH --partition=submit-gpu ">> ${opath}/sub.sh
-    echo "#SBATCH --time=96:00:00 ">> ${opath}/sub.sh
+    echo "#SBATCH --time=124:00:00 ">> ${opath}/sub.sh
 fi 
 #
 
@@ -129,7 +140,7 @@ if [[ "$(hostname)" == *"satori"* ]]; then
     echo "cd /home/$(whoami)/rs3l/deepjet-geometric/examples/" >> ${opath}/sub.sh
     echo "$(cat ${opath}/runcommand_continue.sh) > ${opath}/output.txt" >> ${opath}/sub.sh
 else
-    echo "singularity exec --nv --env PYTHONPATH=\"/work/tier3/jkrupa/cl/deepjet-geometric/\" --bind /work/tier3/nswood/cl/ --bind /work/tier3/jkrupa/cl /work/tier3/bmaier/sandboxes/geometricdl.sif $(cat ${opath}/runcommand_continue.sh) > ${opath}/output.txt" >> ${opath}/sub.sh
+    echo "singularity exec --nv --env PYTHONPATH=\"/work/tier3/jkrupa/cl/deepjet-geometric/\" --bind /work/tier3/nswood/cl/ --bind /work/tier3/jkrupa/cl /work/tier3/bmaier/sandboxes/geometricdl.sif $(cat ${opath}/runcommand_continue.sh) >> ${opath}/output.txt" >> ${opath}/sub.sh
 
 fi
 
