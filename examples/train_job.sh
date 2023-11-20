@@ -180,13 +180,13 @@ rm ${opath}/sub.sh
 echo "#!/bin/bash " >> ${opath}/sub.sh
 
 echo "#SBATCH -J rsXX3l_1GPU"  >> ${opath}/sub.sh
-echo "#SBATCH -o rs3l_1GPUs_%j.out ">> ${opath}/sub.sh
-echo "#SBATCH -e rs3l_1GPUs_%j.err ">> ${opath}/sub.sh
-echo "#SBATCH --mail-user=jkrupa@mit.edu ">> ${opath}/sub.sh
+echo "#SBATCH -o logs/rs3l_1GPUs_%j.out ">> ${opath}/sub.sh
+echo "#SBATCH -e logs/rs3l_1GPUs_%j.err ">> ${opath}/sub.sh
+#echo "#SBATCH --mail-user=jkrupa@mit.edu ">> ${opath}/sub.sh
 echo "#SBATCH --mail-type=ALL ">> ${opath}/sub.sh
 if [[ "$(hostname)" == *"satori"* ]]; then
-    #echo "#SBATCH --qos=sched_level_2" >> ${opath}/sub.sh
     #echo "#SBATCH --partition=sched_system_all_8" >> ${opath}/sub.sh
+    echo "#SBATCH --qos=sched_level_2" >> ${opath}/sub.sh
     echo "#SBATCH --time=24:00:00 ">> ${opath}/sub.sh
     echo "#SBATCH --mem=100G" >> ${opath}/sub.sh
     echo "#SBATCH --gres=gpu:1" >> ${opath}/sub.sh
@@ -228,7 +228,7 @@ fi
 echo "echo "Run completed at:- "" >>${opath}/sub.sh
 echo date >> ${opath}/sub.sh
 
-#sbatch ${opath}/sub.sh
+sbatch ${opath}/sub.sh
 
 #curl  -X POST -H 'Content-type: application/json' \
 # --data '{"text":"Training Job Completed on '"$(hostname)"', tmux-session '"$(tmux display-message -p '#S')"'."}' \
