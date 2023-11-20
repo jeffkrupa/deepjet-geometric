@@ -193,8 +193,10 @@ if [[ "$(hostname)" == *"satori"* ]]; then
     #echo "#SBATCH --gpus-per-node=1" >> ${opath}/sub.sh
     echo "#SBATCH --nodes=1" >> ${opath}/sub.sh
 else
+
+    echo "#SBATCH --gres=gpu:1 " >> ${opath}/sub.sh
     echo "#SBATCH --partition=submit-gpu ">> ${opath}/sub.sh
-    echo "#SBATCH --time=96:00:00 ">> ${opath}/sub.sh
+    echo "#SBATCH --time=124:00:00 ">> ${opath}/sub.sh
 fi 
 #
 
