@@ -327,11 +327,12 @@ class Net(nn.Module):
 
         )
 
-        if args.one_layer_MLP:
+        if self.fine_tuning:
+          if args.one_layer_MLP:
             self.mlp = nn.Sequential(nn.Linear(int(self.n_out_nodes), 1),
                                             nn.Sigmoid()
                                             )
-        else:
+          else:
             self.mlp = nn.Sequential(nn.Linear(int(self.n_out_nodes), 128),
                                             nn.ReLU(),
                                             nn.Linear(128, 64),
