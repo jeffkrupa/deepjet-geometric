@@ -80,7 +80,7 @@ fi
 
 
 # Construct the Python command
-PYTHON_CMD="python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath ${ipath} --vpath ${vpath} --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 2e6 --lr 0.0001 --batchsize 1000 --fine_tuning --nepochs ${NEPOCHS} --Nmaxsample_train ${NTRAIN} --which_augmentations "$(echo "$AUGS" | sed 's/./& /g' | sed 's/ $//')" ${FULLY_SUPERVISED} ${FIX_WEIGHTS} ${LAYERS} ${CONTINUE_TRAINING} --opath ${OPATH} --mpath \"${LATEST_MODEL}\"" 
+PYTHON_CMD="python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath ${ipath} --vpath ${vpath} --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 2e6 --lr 0.0001 --batchsize 1000 --fine_tuning --nepochs ${NEPOCHS} --Nmaxsample_train ${NTRAIN} --which_augmentations "$(echo "$AUGS" | sed 's/./& /g' | sed 's/ $//')" ${FULLY_SUPERVISED} ${FIX_WEIGHTS} ${LAYERS} ${CONTINUE_TRAINING} ${WZ_ZZ} --opath ${OPATH} --mpath \"${LATEST_MODEL}\"" 
 
 # Execute the Python command
 echo "Running command:" >>  ${OPATH}/output.txt

@@ -70,13 +70,15 @@ print("train with kinematics only? ", args.kinematics_only)
 print("train with abseta? ", args.abseta)
 print("which augmentations? " , args.which_augmentations)
 print("fine tuning? " , args.fine_tuning)
-
+'''
 if args.continue_training:
-    if "199" in args.mpath:
+    if args.nepochs <= 200:
+        
+      if "199" in args.mpath:
         print("Epoch 200 already reached. Exiting...")
         sys.exit()
 
-
+'''
 
 model_dir = args.opath
 if not os.path.exists(model_dir):
