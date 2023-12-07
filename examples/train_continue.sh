@@ -68,7 +68,9 @@ else
    basepath="/work/tier3/jkrupa/cl/samples/"
 fi
 
-if [[ "$WZ_ZZ" == "True" ]]; then
+
+#if [[ "$WZ_ZZ" == "True" ]]; then
+if [[ "$WZ_ZZ" ]]; then
    opath="$opath,wz_zz"
    ipath="$basepath/mar20/wz-vs-zz/train/"
    vpath="$basepath/mar20/wz-vs-zz/val/"
@@ -77,7 +79,6 @@ else
    ipath="$basepath/mar20_finetuning/outfiles/train/"
    vpath="$basepath/mar20_finetuning/outfiles/val/"
 fi
-
 
 # Construct the Python command
 PYTHON_CMD="python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath ${ipath} --vpath ${vpath} --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 2e6 --lr 0.0001 --batchsize 1000 --fine_tuning --nepochs ${NEPOCHS} --Nmaxsample_train ${NTRAIN} --which_augmentations "$(echo "$AUGS" | sed 's/./& /g' | sed 's/ $//')" ${FULLY_SUPERVISED} ${FIX_WEIGHTS} ${LAYERS} ${CONTINUE_TRAINING} ${WZ_ZZ} --opath ${OPATH} --mpath \"${LATEST_MODEL}\"" 
