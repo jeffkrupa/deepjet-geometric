@@ -9,8 +9,9 @@ from transformers.activations import gelu_new
 #from longformer.diagonaled_mm_tvm import diagonaled_mm as diagonaled_mm_tvm, mask_invalid_locations
 #from longformer.sliding_chunks import sliding_chunks_matmul_qk, sliding_chunks_matmul_pv
 
-from deepjet_geometric.datasets import CLV2
-from torch_geometric.data import DataLoader
+from deepjet_geometric.datasets import CLV1_Torch
+from torch.utils.data import Dataset, DataLoader
+from torch.utils.data.distributed import DistributedSampler
 import utils
 from torch.nn import CrossEntropyLoss, MSELoss
 import math
@@ -19,7 +20,7 @@ from yaml.loader import SafeLoader
 import os, sys
 import argparse
 import json 
-
+import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -37,6 +38,7 @@ import sys
 
 
 
+world_size = 4  # Number of GPUs you want to use 
 
 
 BATCHSIZE = 200
@@ -47,7 +49,7 @@ p.add_args(
     '--dataset_pattern', '--output', ('--n_epochs', p.INT),
     '--checkpoint_path',
     ('--ipath', p.STR), ('--vpath', p.STR), ('--opath', p.STR),
-    ('--temperature', p.FLOAT), ('--n_out_nodes',p.INT), 
+    ('--temperature', p.FLOAT), ('--n_out_nodes',p.INT), ('--n_max_train',p.INT), ('--n_max_val',p.INT),
     ('--qcd_only',p.STORE_TRUE), ('--seed_only',p.STORE_TRUE),
     ('--abseta',p.STORE_TRUE), ('--kinematics_only',p.STORE_TRUE),
     ('--istransformer',p.STORE_TRUE),
@@ -67,7 +69,7 @@ p.add_args(
 )
 config = p.parse_args()
 
-os.system(f"mkdir {config.opath}")
+os.system(f"mkdir -p {config.opath}")
 
 stdoutOrigin=sys.stdout 
 sys.stdout = open("./"+config.opath+"/log.txt", "w")
@@ -109,32 +111,36 @@ model_dir = config.opath
 if not os.path.exists(model_dir):
     os.system("mkdir -p "+model_dir)
     #subprocess.call("mkdir -p %s"%model_dir,shell=True)
-data_train = CLV2(config.ipath, opath = config.opath+"/train",istransformer = config.istransformer,qcd_only = False)
-data_test = CLV2(config.vpath,opath=  config.opath+"/test",istransformer = config.istransformer,qcd_only = False)
+data_train = CLV1_Torch(config.ipath, Nevents = config.n_max_train, opath = config.opath+"/train")
+data_test = CLV1_Torch(config.vpath, Nevents = config.n_max_val, opath=  config.opath+"/test")
 
 
+train_sampler = torch.utils.data.distributed.DistributedSampler(data_train, num_replicas=world_size, rank=rank)
+test_sampler = torch.utils.data.distributed.DistributedSampler(data_train, num_replicas=world_size, rank=rank)
 
 
+train_loader = DataLoader(data_train, batch_size=BATCHSIZE, sampler=train_sampler, num_workers=16)
+test_loader = DataLoader(data_test, batch_size=BATCHSIZE, sampler=test_sampler, num_workers=16)
 
-train_loader = DataLoader(data_train, batch_size=BATCHSIZE,shuffle=False,
-                          follow_batch=['x_pf'])
-test_loader = DataLoader(data_test, batch_size=BATCHSIZE,shuffle=False,
-                         follow_batch=['x_pf'])
-
-for batch_idx, data in enumerate(train_loader):
-        
-        print(batch_idx)
 import torch
 from torch import nn
 import torch.nn.functional as F
-from torch_geometric.nn.conv import DynamicEdgeConv
-from torch_geometric.nn.pool import avg_pool_x
-#from torch_geometric.graphgym.models.pooling import global_add_pool
 from torch.nn import Sequential, Linear
-#from torch_geometric.nn import DataParallel
-#from torch_geometric.nn.norm import BatchNorm
 from torch_scatter import scatter
+import torch.distributed as dist
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
 
+def setup(rank, world_size):
+    dist.init_process_group(
+        backend='nccl', # 'nccl' is recommended for GPU, 'gloo' for CPU
+        init_method='env://', # Uses environment variables for configuration
+        rank=rank,
+        world_size=world_size
+    )
+
+def cleanup():
+    dist.destroy_process_group()
 
 def global_add_pool(x, batch, size=None):
     """
@@ -182,25 +188,6 @@ def contrastive_loss( x_i, x_j, temperature=0.1 ):
     loss = torch.sum( loss_partial )/( 2*batch_size )
     return loss
 
-def Hyperbolic_contrastive_loss(x_i, x_j, temperature=0.1 ,c=0.2):
-    xdevice = x_i.get_device()
-    batch_size = x_i.shape[0]
-    z_i = F.normalize( x_i, dim=1 )
-    z_j = F.normalize( x_j, dim=1 )
-    z   = torch.cat( [z_i, z_j], dim=0 )
-    similarity_matrix = torch.squeeze(pmath.mobius_matvec(z.unsqueeze(1), z.unsqueeze(0),c=c),dim=2)
-    
-    sim_ij = torch.diag( similarity_matrix,  batch_size )
-    sim_ji = torch.diag( similarity_matrix, -batch_size )
-    positives = torch.cat( [sim_ij, sim_ji], dim=0 )
-    nominator = torch.exp( positives / temperature )
-    negatives_mask = ( ~torch.eye( 2*batch_size, 2*batch_size, dtype=bool ) ).float()
-    negatives_mask = negatives_mask.to( xdevice )
-    denominator = negatives_mask * torch.exp( similarity_matrix / temperature )
-    #print(nominator, denominator)
-    loss_partial = -torch.log( nominator / torch.sum( denominator, dim=1 ) )
-    loss = torch.sum( loss_partial )/( 2*batch_size )
-    return loss
 
 class OskarAttention(BertSelfAttention):
     def __init__(self, config):
@@ -434,125 +421,6 @@ class OskarTransformer(nn.Module):
         if self.output_attentions:
             outputs = outputs + (all_attentions,)
         return outputs  # last-layer hidden state, (all hidden states), (all attentions)
-class HypeTrans(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        print(config)
-        self.relu = gelu_new #nn.ReLU() 
-        self.tanh = nn.Tanh()
-        self.c = config.c
-
-        config.output_attentions = False
-        config.output_hidden_states = False
-        config.num_hidden_groups = 1
-        config.inner_group_num = 1
-        config.layer_norm_eps = 1e-12
-        config.hidden_dropout_prob = 0
-        config.attention_probs_dropout_prob = 0
-        config.hidden_act = "gelu_new"
-
-        self.input_bn = nn.BatchNorm1d(config.feature_size) 
-
-        self.embedder =hypnn.HypLinear(config.feature_size, config.embedding_size,c=self.c)
-        self.embed_bn = nn.BatchNorm1d(config.embedding_size) 
-
-        self.encoders = nn.ModuleList([OskarTransformer(config) for _ in range(config.num_encoders)])
-        self.decoders = nn.ModuleList([
-                                       hypnn.HypLinear(config.hidden_size, config.hidden_size,c=self.c), 
-                                       hypnn.HypLinear(config.hidden_size, config.hidden_size,c=self.c), 
-                                       hypnn.HypLinear(config.hidden_size, config.n_out_nodes,c=self.c)
-                                       ])
-        self.decoder_bn = nn.ModuleList([nn.BatchNorm1d(config.hidden_size) for _ in self.decoders[:-1]])
-        #self.pooling = torch.mean()
-        self.tests = nn.ModuleList(
-                    [
-                      nn.Linear(config.feature_size, 1, bias=False),
-                      # nn.Linear(config.feature_size, config.hidden_size),
-                      # nn.Linear(config.hidden_size, config.hidden_size),
-                      # nn.Linear(config.hidden_size, config.hidden_size),
-                      # nn.Linear(config.hidden_size, config.hidden_size),
-                      # nn.Linear(config.hidden_size, 1)
-                    ]
-                    )
-
-        self.final_embedder = nn.ModuleList([
-            hypnn.HypLinear(config.n_out_nodes, config.n_out_nodes,c=self.c),
-            hypnn.HypLinear(config.n_out_nodes, config.n_out_nodes,c=self.c),
-        ])
-
-        self.config = config
-        size = 100
-       
-        if config.replace_mean:    
-            self.pre_final = nn.ModuleList([
-                                           hypnn.HypLinear(int(size), int(size/2),c=self.c),
-                                           hypnn.HypLinear(int(size/2), int(size/4),c=self.c),
-                                           hypnn.HypLinear(int(size/4), int(1),c=self.c)
-                                           ])
-        self.apply(self._init_weights)
-
-    def _init_weights(self, module):
-        """ Initialize the weights.
-        """
-        if isinstance(module, (nn.Linear, nn.Embedding)):
-            # Slightly different from the TF version which uses truncated_normal for initialization
-            # cf https://github.com/pytorch/pytorch/pull/5617
-            module.weight.data.normal_(mean=0.0, std=0.02)
-            if isinstance(module, (nn.Linear)) and module.bias is not None:
-                module.bias.data.zero_()
-        elif isinstance(module, nn.LayerNorm):
-            module.bias.data.zero_()
-            module.weight.data.fill_(1.0)
-
-    def forward(self, x, mask=None):
-        
-        x = hypnn.ToPoincare(self.c)(x)
-        if mask is None:
-            mask = torch.ones(x.size()[:-1], device=device)
-        if len(mask.shape) == 3:
-            attn_mask = mask.unsqueeze(1) # [B, P, P] -> [B, 1, P, P]
-        else:
-            attn_mask = mask.unsqueeze(1).unsqueeze(2) # [B, P] -> [B, 1, P, 1]
-        attn_mask = (1 - attn_mask) * -1e9
-
-        head_mask = [None] * self.config.num_hidden_layers
-
-        x = self.input_bn(x.permute(0, 2, 1)).permute(0, 2, 1)
-        
-        h = self.embedder(x) 
-        h = torch.relu(h)
-        h = self.embed_bn(h.permute(0, 2, 1)).permute(0, 2, 1)
-
-        
-        for e in self.encoders:
-            h = e(h, attn_mask, head_mask)[0]
-        h = self.decoders[0](h)
-        h = self.relu(h)
-        h = self.decoder_bn[0](h.permute(0, 2, 1)).permute(0, 2, 1)
-
-        h = self.decoders[1](h)
-        h = self.relu(h)
-        h = self.decoder_bn[1](h.permute(0, 2, 1)).permute(0, 2, 1)
-
-        h = self.decoders[2](h)  
-        
-        if self.config.replace_mean:
-            h = torch.reshape(h,(h.shape[0],h.shape[2],h.shape[1]))
-            h = self.pre_final[0](h)
-            h = self.pre_final[1](h)
-            h = self.pre_final[2](h)
-            h = torch.squeeze(h,dim =2)
-        else:
-            h = torch.mean(h,dim=1)   # [Batch size, #output features]
-        
-        h = self.final_embedder[0](h)
-        h = self.relu(h)
-        h = self.final_embedder[1](h)
-        h = torch.nn.Sigmoid()(h)
-       
-        
-        
-        return h
     
     
 class Transformer(nn.Module):
@@ -670,46 +538,26 @@ class Transformer(nn.Module):
         h = self.final_embedder[0](h)
         h = self.relu(h)
         h = self.final_embedder[1](h)
-        if self.config.hyperbolic:
-            h = torch.nn.Sigmoid()(h)
-        else:
-            h = self.relu(h)
+        h = self.relu(h)
         
-        #print("h",h)    
-        #print("h.shape",h.shape)    
-        # h = torch.squeeze(h,dim=-1) 
-        if self.config.hyperbolic:
-            h = torch.squeeze(h, dim= 1)
-            h = hypnn.ToPoincare(self.c)(h)
         return h
 
         
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-#print(device)
 n_out_nodes = int(config.n_out_nodes)
-if config.kinematics_only:
-    n_in_nodes=4
-else:
-    n_in_nodes=15
 
-#with open('config.yml') as f:
-#    config = yaml.load(f, Loader=SafeLoader)
-#print(config)
-if config.hyperbolic:
-    cl = HypeTrans(config)
-else:
-    cl = Transformer(config)
-cl = cl.to(device)
-cl = nn.DataParallel(cl)
-#puma.load_state_dict(torch.load(model_dir+"epoch-32.pt")['model'])
+cl = Transformer(config)
+cl = cl.to(rank)
+cl = DDP(cl,device_ids=[rank])
+
 optimizer = torch.optim.Adam(cl.parameters(), lr=0.001)
-#optimizer.load_state_dict(torch.load(model_dir+"epoch-32.pt")['opt'])
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
-#scheduler.load_state_dict(torch.load(model_dir+"epoch-32.pt")['lr'])
 
 
-def train():
+#def train():
+def train(rank, world_size):
+    setup(rank, world_size)
+
     cl.train()
     counter = 0
 
@@ -720,7 +568,6 @@ def train():
         if batch_idx >= num_batches:
             break
 
-        #print(str(counter*BATCHSIZE)+' / '+str(len(train_loader.dataset)),end='\r')
         data = data.to(device)
         optimizer.zero_grad()
      
@@ -728,42 +575,14 @@ def train():
         x_pf = torch.reshape(data.x_pf,(int(cur_batchsize),100,15))
         
         x_pf = x_pf.to(device)
-        out = cl(x_pf)#,data.x_pf_batch)
-        #print("out",out)
-        #print("out.shape",out.shape)
-        #out[0][:, 1] = torch.sigmoid(out[0][:, 1])
-        '''
-        print(out[0])
-        print("A")
-        print(out[0])
-        print("B")
-        print(out[0][0::2])
-        print("C")
-        print(out[0][1::2])
-        print("A parton")
-        print(data.x_part)
-        print("B parton")
-        print(data.x_part[0::2])
-        print("C parton")
-        print(data.x_part[1::2])
-        #print(data.y)
-        '''
-        #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].float())
-        #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].reshape(-1,2)[:,:1].reshape(-1))
-        if config.hyperbolic:
-            loss = Hyperbolic_contrastive_loss(out[0::2],out[1::2],temperature,config.c)
-        else:
-            loss = contrastive_loss(out[0::2],out[1::2],temperature)
-        
-
-        #print(data.y)
+        out = cl(x_pf)
+        loss = contrastive_loss(out[0::2],out[1::2],temperature)
         
         loss.backward()
         total_loss += loss.item()
         optimizer.step()
-        #if counter > 100:
-        #    break
-        
+
+    cleanup()   
     return total_loss / len(train_loader.dataset)
 
 @torch.no_grad()
@@ -777,7 +596,6 @@ def test():
         if batch_idx >= num_batches:
             break
         counter += 1
-        #print(str(counter*BATCHSIZE)+' / '+str(len(train_loader.dataset)),end='\r')
         data = data.to(device)
         with torch.no_grad():
             cur_batchsize = min(BATCHSIZE, data.x_pf.shape[0]/100)
@@ -786,127 +604,15 @@ def test():
             out = cl(x_pf)
             
 
-
-            #out[0][:, 1] = torch.sigmoid(out[0][:, 1])
-            #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].float())
-            #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].reshape(-1,2)[:,:1].reshape(-1))
-            #loss = nn.MSELoss()(torch.squeeze(out[0]).view(-1),data.y[data.y>-1.].float())
-            if config.hyperbolic:
-                loss = Hyperbolic_contrastive_loss(out[0::2],out[1::2],temperature,config.c)
-                print(loss)
-            else:
-                loss = contrastive_loss(out[0::2],out[1::2],temperature)
+            loss = contrastive_loss(out[0::2],out[1::2],temperature)
 
        
             total_loss += loss.item()
 
-        #if counter > 100:
-        #    break
-    #PLOT HERE
     
     
     
     return total_loss / len(test_loader.dataset)
-
-def make_plots():
-    cl.eval()
-    
-    os.system(f'mkdir {config.opath}/plots')
-    cspace = []
-    truths = []
-    num_batches = len(test_loader) - 3
-    for batch_idx, data in enumerate(tqdm.tqdm(test_loader)):
-       
-        data = data.to(device)
-        with torch.no_grad():
-            cur_batchsize = min(BATCHSIZE, data.x_pf.shape[0]/100)
-            x_pf = torch.reshape(data.x_pf,(int(cur_batchsize),100,15))
-            y = data.y
-#             y = torch.reshape(data.y,(int(cur_batchsize),1))
-            x_pf = x_pf.to(device)
-            out = cl(x_pf)
-            cspace.append(out.cpu())
-            truths.append(y.cpu())
-    
-    data = torch.cat(cspace, dim=0)
-    testingLabels = torch.cat(truths,dim=0)
-    mask = ~(torch.isnan(data).any(dim=1) | torch.isinf(data).any(dim=1))
-    data = data[mask]
-    testingLabels = testingLabels[mask]
-
-    data = data.numpy()
-    data = normalize(data, axis =1) 
-    
-    testingLabels = testingLabels.numpy()
-    # Find the unique class labels from the testingLabels array
-    class_labels = np.unique(testingLabels)
-
-    # Apply PCA to reduce dimensionality to 2 for visualization
-    pca = PCA(n_components=2)
-    data_pca = pca.fit_transform(data)
-    
-    # Create a dictionary to store the data points for each class label
-    data_dict = {}
-    print(class_labels)
-    for label in class_labels:
-        data_dict[label] = data_pca[testingLabels == label]
-
-    # Plot the data points
-    for label in class_labels:
-        plt.scatter(data_dict[label][:, 0], data_dict[label][:, 1], label=f'Class {label}', alpha=0.05)
-
-    plt.legend()
-    plt.xlabel('Principal Component 1')
-    plt.ylabel('Principal Component 2')
-    plt.title('2D PCA')
-    filename = 'PCA2D'
-    plt.savefig(os.path.join(config.opath,'plots', filename))
-
-    # Apply PCA to reduce dimensionality to 3 for 3D visualization
-    pca = PCA(n_components=3)
-    data_pca = pca.fit_transform(data)
-    
-    data_dict = {}
-    for label in class_labels:
-        data_dict[label] = data_pca[testingLabels == label]
-    # Create a list to store the image frames
-    frames = []
-
-    # Create 3D PCA plots at different angles
-    for angle in range(0, 360, 5):
-        fig = plt.figure(figsize = (5,5))
-        ax = fig.add_subplot(111, projection='3d')
-
-        for label in class_labels:
-            ax.scatter(data_dict[label][:, 0], data_dict[label][:, 1], data_dict[label][:, 2],
-                       label=f'Class {label}', alpha=0.05)
-
-        ax.set_xlabel('PC1')
-        ax.set_ylabel('PC2')
-        ax.set_zlabel('PC3')
-        ax.set_title('3D PCA Plot')
-        ax.legend()
-        ax.grid(False)
-
-        ax.view_init(elev=10, azim=angle)  # Set the elevation and azimuth angles
-
-        # Save the plot as an image file
-        filename = f'PCA_Contrastive_Spaces_{angle}.png'
-        fig.savefig(os.path.join(config.opath,'plots', filename))
-        plt.close(fig)
-        time.sleep(1)
-
-        # Open the saved image and append it to the list of frames
-        img = Image.open(os.path.join(config.opath,'plots', filename))
-        frames.append(img)
-
-    # Save the frames as a GIF
-    gif_filename = os.path.join(config.opath,'plots', 'pca_animation.gif')
-    frames[0].save(gif_filename, format='GIF', append_images=frames[1:], save_all=True, duration=200, loop=1)
-
-    # Rest of your code...
-
-    
     
 
 best_val_loss = 1e9
@@ -918,9 +624,8 @@ loss_dict = {'train_loss': [], 'val_loss': []}
 
 for epoch in range(1, nepochs):
     print(f'Training Epoch {epoch} on {len(train_loader.dataset)} jets')
-    
-    loss = train()
-    
+    #loss = train()
+    mp.spawn(train, args=(world_size,), nprocs=world_size, join=True)
     scheduler.step()
 
     #exit(1)
@@ -950,7 +655,6 @@ for epoch in range(1, nepochs):
 
         torch.save(state_dicts, os.path.join(model_dir, 'best-epoch.pt'.format(epoch)))
 
-make_plots()
 print(all_train_loss)
 print(all_val_loss)
 
