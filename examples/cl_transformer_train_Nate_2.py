@@ -34,7 +34,10 @@ import time
 
 import sys
 
+import torch.nn.functional as F
+
 BATCHSIZE = 200
+VERBOSE = False
 world_size = torch.cuda.device_count()  # Number of GPUs you want to use
 
 def setup(rank, world_size):
@@ -168,6 +171,8 @@ class OskarAttention(BertSelfAttention):
             attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
             attention_scores = attention_scores / math.sqrt(self.attention_head_size)
             if attention_mask is not None:
+                attention_mask = attention_mask.to(input_ids.device)
+
                 #attention_mask = attention_mask.to(hidden_states.device)
                 # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
                 attention_scores = attention_scores + attention_mask
@@ -432,7 +437,7 @@ def train(rank, world_size, config, BATCHSIZE, train_loader,):
 
     # Initialize model and wrap with DDP
     model = Transformer(config).to(rank)
-    model = DDP(model, device_ids=[rank])
+    model = DDP(model, device_ids=[rank], find_unused_parameters=True)
 
     # Initialize optimizer and other necessary components here
     # optimizer = ...
@@ -507,7 +512,7 @@ def main(rank, world_size):
     # Prepare your data loaders
     data_train = CLV1_Torch(config.ipath, Nevents=config.n_max_train)
     train_sampler = DistributedSampler(data_train, num_replicas=world_size, rank=rank)
-    train_loader = DataLoader(data_train, batch_size=config.batch_size, sampler=train_sampler, num_workers=16)
+    train_loader = DataLoader(data_train, batch_size=config.batch_size, sampler=train_sampler, num_workers=4)
 
     # Call the training function
     train(rank, world_size, config, config.batch_size, train_loader,)
