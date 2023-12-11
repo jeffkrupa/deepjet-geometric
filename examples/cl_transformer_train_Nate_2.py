@@ -7,7 +7,7 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, DistributedSampler
 
-from deepjet_geometric.datasets import CLV1_Torch
+from deepjet_geometric.datasets import HDF5Dataset_chunks
 from transformers.models.bert.modeling_bert import ACT2FN, BertEmbeddings, BertSelfAttention, prune_linear_layer
 from transformers.activations import gelu_new
 from torch import nn
@@ -468,7 +468,7 @@ def train(rank, world_size, config, BATCHSIZE, train_loader,):
             loss.backward()
             total_loss += loss.item()
             optimizer.step()
-        print(f"Total training loss={total_loss}")
+        print(f"Total training loss={total_loss/len(train_loader.dataset)}")
         # Optional: Save model/checkpoint - make sure only one process does this
         # Save model/checkpoint
         #if rank == 0:
@@ -510,7 +510,7 @@ def main(rank, world_size):
     os.system(f"mkdir -p {config.opath}")
 
     # Prepare your data loaders
-    data_train = CLV1_Torch(config.ipath, Nevents=config.n_max_train)
+    data_train = HDF5Dataset_chunks(config.ipath, Nevents=config.n_max_train)
     train_sampler = DistributedSampler(data_train, num_replicas=world_size, rank=rank)
     train_loader = DataLoader(data_train, batch_size=config.batch_size, sampler=train_sampler, num_workers=4)
 

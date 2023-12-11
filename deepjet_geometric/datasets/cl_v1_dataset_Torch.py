@@ -67,10 +67,14 @@ class CLV1_Torch(Dataset):
 
         file_idx = np.searchsorted(self.strides, idx) - 1
         idx_in_file = idx - self.strides[max(0, file_idx)]
-
+        print("idx",idx)
+        print("file_idx",file_idx)
+        print("idx_in_file",idx_in_file)
+        print("self.raw_paths[file_idx]",self.raw_paths[file_idx])
         with h5py.File(self.raw_paths[file_idx], 'r') as f:
             #Npfs = np.count_nonzero(f['features'][idx_in_file, :, 0])
 
+            print("f['features'][idx_in_file, :, :]).float().shape",torch.from_numpy(f['features'][idx_in_file, :, :]).float().shape)
             x_pf = torch.from_numpy(f['features'][idx_in_file, :, :]).float()
             #y = torch.tensor(f['truth_label'][idx_in_file], dtype=torch.float32)
             #x_vartype = torch.tensor(f['vartype'][idx_in_file], dtype=torch.float32)
