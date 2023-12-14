@@ -52,6 +52,7 @@ parser.add_argument('--fs_train',action='store_true',default="False",help='Pass 
 parser.add_argument('--zbb_qcd',action='store_true',default=False,help = 'Pass this if you wish to train Z_bb vs QCD')
 parser.add_argument('--top_zbb',action='store_true',default=False,help = 'Pass this if you wish to train top vs Z_bb')
 parser.add_argument('--wz_zz',action='store_true',default=False,help = 'Pass this if you wish to train wz vs zlightlight')
+parser.add_argument('--wz_qcd',action='store_true',default=False,help = 'Pass this if you wish to train wz vs QCD')
 parser.add_argument('--all_augmentations',action='store_true',default=False,help = 'Pass this if you wish to train all augs (used with ft_with_p_h)')
 parser.add_argument('--add_reseeded',action='store_true',default=False,)
 parser.add_argument('--add_fsr',action='store_true',default=False,)
