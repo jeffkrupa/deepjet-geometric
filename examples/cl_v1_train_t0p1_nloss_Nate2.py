@@ -398,12 +398,18 @@ def load_matching_state_dict(model, state_dict_path):
 ##    print("Cannot give a model path if you are fully supervising (unless you are continuing to train)")
 #    sys.exit()
 #Loading Model
+optimizer = torch.optim.Adam(cl.parameters(), lr=args.lr)
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
 if args.continue_training:
     cl.load_state_dict(torch.load(args.mpath)['model'])
+    optimizer.load_state_dict(torch.load(args.mpath)['opt'])
+    scheduler.load_state_dict(torch.load(args.mpath)['lr'])    
     start_epoch = args.mpath.split("/")[-1].split("-")[-1].split(".")[0]
     start_epoch = int(start_epoch) + 1
+
     print(f"Continuing training from epoch {start_epoch}...")
-elif args.mpath:
+
+if not args.continue_training and args.mpath:
     load_matching_state_dict(cl,args.mpath)
     print(f'Starting classification with hot start. Loaded model {args.mpath}')
     
@@ -419,8 +425,8 @@ if args.fix_weights:
           
             param.requires_grad = True
 
-optimizer = torch.optim.Adam(cl.parameters(), lr=args.lr)
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
+#optimizer = torch.optim.Adam(cl.parameters(), lr=args.lr)
+#scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
 
 
 def train():
