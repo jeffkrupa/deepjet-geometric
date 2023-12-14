@@ -7,7 +7,7 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, DistributedSampler
 
-from deepjet_geometric.datasets import HDF5Dataset_chunks
+from deepjet_geometric.datasets import HDF5Dataset_chunks as HDF5Dataset
 from transformers.models.bert.modeling_bert import ACT2FN, BertEmbeddings, BertSelfAttention, prune_linear_layer
 from transformers.activations import gelu_new
 from torch import nn
@@ -48,6 +48,68 @@ def setup(rank, world_size):
 
 def cleanup():
     dist.destroy_process_group()
+
+import torch
+import torch.distributed as dist
+import torch.nn.functional as F
+import torch
+import torch.distributed as dist
+import torch.nn.functional as F
+
+import torch.distributed as dist
+
+def contrastive_loss_ddp(x_i, x_j, temperature=0.1):
+    # Compute similarities locally on each GPU
+    batch_size = x_i.size(0)  # Local batch size for each GPU
+    z_i = F.normalize(x_i, dim=1)
+    z_j = F.normalize(x_j, dim=1)
+    z = torch.cat([z_i, z_j], dim=0)
+    similarity_matrix = F.cosine_similarity(z.unsqueeze(1), z.unsqueeze(0), dim=2)
+    sim_ij = torch.diag(similarity_matrix, batch_size)
+    sim_ji = torch.diag(similarity_matrix, -batch_size)
+    positives = torch.cat([sim_ij, sim_ji], dim=0)
+    nominator = torch.exp(positives / temperature)
+    negatives_mask = (~torch.eye(2 * batch_size, device=x_i.device)).float()
+    denominator = negatives_mask * torch.exp(similarity_matrix / temperature)
+    loss_partial = -torch.log(nominator / torch.sum(denominator, dim=1))
+    loss = torch.sum(loss_partial) / (2 * batch_size)
+
+    # Average the loss across all GPUs
+    dist.all_reduce(loss, op=dist.ReduceOp.SUM)
+    loss /= dist.get_world_size()
+
+    return loss
+
+from torch.utils.data.distributed import DistributedSampler
+
+class PairedDistributedSampler(DistributedSampler):
+    def __init__(self, dataset, num_replicas=None, rank=None):
+        super().__init__(dataset, num_replicas=num_replicas, rank=rank)
+        self.rank = rank
+
+    def __iter__(self):
+        # Generate indices for anchors and augmentations
+        indices = [(i, i + 1) for i in range(0, len(self.dataset), 2)]
+
+        # Shuffle indices if required
+        if self.shuffle:
+            # Shuffle pairs, not individual indices
+            indices = self._shuffle_indices(indices)
+
+        # Flatten the list of pairs
+        flattened_indices = [idx for pair in indices for idx in pair]
+
+        # Split into batches
+        indices_per_rank = len(flattened_indices) // self.num_replicas
+        start = self.rank * indices_per_rank
+        end = start + indices_per_rank
+        return iter(flattened_indices[start:end])
+
+    def _shuffle_indices(self, indices):
+        # Custom logic to shuffle indices while maintaining pairs
+        np.random.shuffle(indices)
+        return indices
+
 def contrastive_loss( x_i, x_j, temperature=0.1 ):
     xdevice = x_i.get_device()
     batch_size = x_i.shape[0]
@@ -69,6 +131,7 @@ def contrastive_loss( x_i, x_j, temperature=0.1 ):
     nominator = torch.exp( positives / temperature )
     negatives_mask = ( ~torch.eye( 2*batch_size, 2*batch_size, dtype=bool ) ).float()
     negatives_mask = negatives_mask.to( xdevice )
+    #print(negatives_mask.get_device(), similarity_matrix.get_device())
     denominator = negatives_mask * torch.exp( similarity_matrix / temperature )
     #print(nominator, denominator)
     loss_partial = -torch.log( nominator / torch.sum( denominator, dim=1 ) )
@@ -432,47 +495,70 @@ class Transformer(nn.Module):
         
         return h
 
-def train(rank, world_size, config, BATCHSIZE, train_loader,):
+def train(rank, world_size, config, BATCHSIZE, train_loader, test_loader):
     setup(rank, world_size)
 
+    if config.continue_training:
+        loss_dict = {'train_loss': pd.read_csv(os.path.join(config.opath,'loss.csv'))['train_loss'].tolist(),
+                     'val_loss': pd.read_csv(os.path.join(config.opath,'loss.csv'))['val_loss'].tolist()}
+    else:
+        start_epoch = 1
+        loss_dict = {'train_loss': [], 'val_loss': []}
     # Initialize model and wrap with DDP
     model = Transformer(config).to(rank)
     model = DDP(model, device_ids=[rank], find_unused_parameters=True)
-
+    best_val_loss = 999
     # Initialize optimizer and other necessary components here
-    # optimizer = ...
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
+    all_val_loss = []
+    all_train_loss = []
     for epoch in range(config.n_epochs):
         print(f"Training epoch {epoch+1} of {config.n_epochs}")
         model.train()
         total_loss = 0
         counter = 0 
+        for param_group in optimizer.param_groups:
+            print("Current learning rate:", param_group['lr'])
         for batch_idx, data in enumerate(tqdm.tqdm(train_loader)):
-            # Your training logic here
-            # ...
-            #if batch_idx >= num_batches:
-            #    break
             counter += 1
             optimizer.zero_grad()
-     
-            #cur_batchsize = min(BATCHSIZE, data.x_pf.shape[0]/100)
-            #x_pf = torch.reshape(data.x_pf,(int(cur_batchsize),100,15))
-            #print(data['x_pf']) 
-            #x_pf = x_pf.to(device)
-            out = model(data['x_pf'])
-            #print(out) 
-            loss = contrastive_loss(out[0::2],out[1::2],config.temperature)
-            #print(loss) 
-            
-            loss.backward()
-            total_loss += loss.item()
-            optimizer.step()
-        print(f"Total training loss={total_loss/len(train_loader.dataset)}")
-        # Optional: Save model/checkpoint - make sure only one process does this
-        # Save model/checkpoint
-        #if rank == 0:
 
+            x_pf = data['x_pf'].to(rank)
+            out = model(x_pf)
+            #print(data['x_vartype'][:10])
+            train_loss = contrastive_loss(out[0::2],out[1::2],config.temperature)
+            train_loss.backward()
+            total_loss += train_loss.item()
+            optimizer.step()
+        print(f"Total training loss={world_size*total_loss/len(train_loader.dataset)}")
+        total_val_loss = 0
+        model.eval()
+        with torch.no_grad():
+            for batch_idx, data in enumerate(tqdm.tqdm(test_loader)):
+                x_pf = data['x_pf'].to(rank)
+                out = model(x_pf)
+                val_loss = contrastive_loss(out[0::2],out[1::2],config.temperature)
+                total_val_loss += val_loss.item()
+        print(f"Total val loss={world_size*total_val_loss/len(test_loader.dataset)}")
+
+        scheduler.step()
+        train_loss = world_size*total_loss/len(train_loader.dataset)
+        val_loss = world_size*total_val_loss/len(test_loader.dataset)
+        loss_dict['train_loss'].append(train_loss)
+        loss_dict['val_loss'].append(val_loss)
+        df = pd.DataFrame.from_dict(loss_dict)
+    
+
+
+        df.to_csv(f"{config.opath}/loss.csv")
+        state_dicts = {'model':model.state_dict(),'opt':optimizer.state_dict(),'lr':scheduler.state_dict()}
+        torch.save(state_dicts, os.path.join(config.opath, f'epoch-{epoch}.pt'))
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(state_dicts, os.path.join(config.opath, 'best-epoch.pt'))
+
+        model.train()
     cleanup()
 def main(rank, world_size):
     # Load or parse your config here
@@ -497,8 +583,9 @@ def main(rank, world_size):
         ('--pt_weight', p.STORE_TRUE), ('--num_max_files', p.INT),
         ('--num_max_particles', p.INT), ('--dr_adj', p.FLOAT),
         ('--beta', p.STORE_TRUE),('--hyperbolic', p.STORE_TRUE),('--c', p.FLOAT),
-        ('--lr_policy'), ('--grad_acc', p.INT), ('--is_decoder',p.STORE_TRUE), ('--replace_mean',p.STORE_TRUE)
+        ('--lr_policy'), ('--grad_acc', p.INT), ('--is_decoder',p.STORE_TRUE), ('--replace_mean',p.STORE_TRUE), ('--continue_training',p.STORE_TRUE),
     )
+    global config
     config = p.parse_args()
     config.save_to("./"+config.opath+"/config.yaml")
     
@@ -510,12 +597,15 @@ def main(rank, world_size):
     os.system(f"mkdir -p {config.opath}")
 
     # Prepare your data loaders
-    data_train = HDF5Dataset_chunks(config.ipath, Nevents=config.n_max_train)
-    train_sampler = DistributedSampler(data_train, num_replicas=world_size, rank=rank)
-    train_loader = DataLoader(data_train, batch_size=config.batch_size, sampler=train_sampler, num_workers=4)
+    data_train = HDF5Dataset(config.ipath, Nevents=config.n_max_train, )#batch_size=BATCHSIZE)
+    train_sampler = PairedDistributedSampler(data_train, num_replicas=world_size, rank=rank)#,shuffle=False)
+    train_loader = DataLoader(data_train, batch_size=config.batch_size, sampler=train_sampler, num_workers=2)
 
-    # Call the training function
-    train(rank, world_size, config, config.batch_size, train_loader,)
+    data_test = HDF5Dataset(config.vpath, Nevents=config.n_max_val, )#batch_size=BATCHSIZE)
+    test_sampler = PairedDistributedSampler(data_test, num_replicas=world_size, rank=rank)#,shuffle=False)
+    test_loader = DataLoader(data_test, batch_size=config.batch_size, sampler=test_sampler, num_workers=2)
+
+    train(rank, world_size, config, config.batch_size, train_loader, test_loader)
 
 if __name__ == "__main__":
     world_size = torch.cuda.device_count()  # Adjust as needed

@@ -51,6 +51,10 @@ while [[ $# -gt 0 ]]; do
       PYTHON_ARGS+=("--wz_zz")
       shift
       ;;
+    --wz_qcd)
+      PYTHON_ARGS+=("--wz_qcd")
+      shift
+      ;;
     -*|--*)
       echo "Unknown option $1"
       return 0 2>/dev/null || exit 0
@@ -99,6 +103,7 @@ FIX_WEIGHTS=$(contains "${PYTHON_ARGS[@]}" "--fix_weights")
 FULLY_SUPERVISED=$(contains "${PYTHON_ARGS[@]}" "--fs_train")
 ONE_LAYER_MLP=$(contains "${PYTHON_ARGS[@]}" "--one_layer_MLP")
 WZ_ZZ=$(contains "${PYTHON_ARGS[@]}" "--wz_zz")
+WZ_QCD=$(contains "${PYTHON_ARGS[@]}" "--wz_qcd")
 # Echo out the current settings
 echo "Current settings:"
 echo "NEPOCHS: ${NEPOCHS:-'Not provided'}"
@@ -110,7 +115,7 @@ echo "WHICH_AUGMENTATIONS: ${WHICH_AUGMENTATIONS[*]:-'None'}"
 echo "MPATH: ${MPATH:-'Not provided'}"
 echo "ONE_LAYER_MLP: ${ONE_LAYER_MLP}"
 echo "WZ_ZZ: ${WZ_ZZ}"
-
+echo "WZ_QCD: ${WZ_QCD}"
 # Make opath unique based on training setup
 OLD_IFS="$IFS"
 IFS='' opath="nov23/Graph-ntrain=${NTRAIN},nval=${NVAL},augs=${WHICH_AUGMENTATIONS[*]}"
@@ -133,7 +138,9 @@ else
    opath="$opath,fivelayerMLP"
 fi
 
-if [[ "$(hostname)" == *"satori"* ]]; then
+if [[ "$(hostname)" == *"satori"* && ( "$WZ_ZZ" == "True" || "$WZ_QCD" == "True" ) ]]; then
+   basepath="/nobackup/users/jkrupa/rs3l/"
+elif [[ "$(hostname)" == *"satori"* ]]; then
    basepath="/nobackup/users/bmaier/rs3l/"
 else   
    basepath="/work/tier3/jkrupa/cl/samples/"
@@ -143,6 +150,11 @@ if [[ "$WZ_ZZ" == "True" ]]; then
    opath="$opath,wz_zz"
    ipath="$basepath/mar20/wz-vs-zz/train/"
    vpath="$basepath/mar20/wz-vs-zz/val/"
+elif [[ "$WZ_QCD" == "True" ]]; then
+   opath="$opath,wz_qcd"
+   ipath="$basepath/mar20_finetuning/wz-vs-qcd/train/"
+   vpath="$basepath/mar20_finetuning/wz-vs-qcd/val/"
+
 else
    opath="$opath,h_qcd"
    ipath="$basepath/mar20_finetuning/outfiles/train/"
@@ -215,7 +227,8 @@ if [[ "$(hostname)" == *"satori"* ]]; then
 
     ## Activate WMLCE virtual environment
     echo 'source ${CONDA_ROOT}/etc/profile.d/conda.sh ' >> ${opath}/sub.sh
-    echo 'conda activate $PYTHON_VIRTUAL_ENVIRONMENT' >> ${opath}/sub.sh
+    echo 'conda activate /nobackup/users/bmaier/rs3l/anaconda3/envs/rs3l38/ ' >> ${opath}/sub.sh
+    #echo 'conda activate $PYTHON_VIRTUAL_ENVIRONMENT' >> ${opath}/sub.sh
 
     echo "cd /home/$(whoami)/rs3l/deepjet-geometric/" >> ${opath}/sub.sh
     echo 'export PYTHONPATH=${PYTHONPATH}:${PWD}' >> ${opath}/sub.sh

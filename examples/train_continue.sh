@@ -38,6 +38,7 @@ FULLY_SUPERVISED=$(echo $OPATH | grep -o 'fully-supervised' &> /dev/null && echo
 FIX_WEIGHTS=$(echo $OPATH | grep -o 'fixed_weights' &> /dev/null && echo "--fix_weights" || echo "")
 LAYERS=$(echo $OPATH | grep -o 'onelayerMLP' &> /dev/null && echo "--one_layer_MLP")
 WZ_ZZ=$(echo $OPATH | grep -o 'wz_zz' &> /dev/null && echo "--wz_zz")
+WZ_QCD=$(echo $OPATH | grep -o 'wz_qcd' &> /dev/null && echo "--wz_qcd")
 find_last_model_epoch() {
     local model_dir="$1"
     #echo "Looking in directory: $model_dir"
@@ -74,6 +75,11 @@ if [[ "$WZ_ZZ" ]]; then
    opath="$opath,wz_zz"
    ipath="$basepath/mar20/wz-vs-zz/train/"
    vpath="$basepath/mar20/wz-vs-zz/val/"
+elif [[ "$WZ_QCD" == "True" ]]; then
+   opath="$opath,wz_qcd"
+   ipath="$basepath/mar20_finetuning/wz-vs-qcd/train/"
+   vpath="$basepath/mar20_finetuning/wz-vs-qcd/val/"
+
 else
    opath="$opath,h_qcd"
    ipath="$basepath/mar20_finetuning/outfiles/train/"
@@ -81,7 +87,7 @@ else
 fi
 
 # Construct the Python command
-PYTHON_CMD="python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath ${ipath} --vpath ${vpath} --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 2e6 --lr 0.0001 --batchsize 1000 --fine_tuning --nepochs ${NEPOCHS} --Nmaxsample_train ${NTRAIN} --which_augmentations "$(echo "$AUGS" | sed 's/./& /g' | sed 's/ $//')" ${FULLY_SUPERVISED} ${FIX_WEIGHTS} ${LAYERS} ${CONTINUE_TRAINING} ${WZ_ZZ} --opath ${OPATH} --mpath \"${LATEST_MODEL}\"" 
+PYTHON_CMD="python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath ${ipath} --vpath ${vpath} --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --Nmaxsample_val 2e6 --lr 0.0001 --batchsize 1000 --fine_tuning --nepochs ${NEPOCHS} --Nmaxsample_train ${NTRAIN} --which_augmentations "$(echo "$AUGS" | sed 's/./& /g' | sed 's/ $//')" ${FULLY_SUPERVISED} ${FIX_WEIGHTS} ${LAYERS} ${CONTINUE_TRAINING} ${WZ_ZZ} ${WZ_QCD} --opath ${OPATH} --mpath \"${LATEST_MODEL}\"" 
 
 # Execute the Python command
 echo "Running command:" >>  ${OPATH}/output.txt
@@ -106,7 +112,7 @@ echo "#SBATCH -e logs/rs3l_1GPUs_%j.err ">> ${opath}/sub.sh
 echo "#SBATCH --mail-type=ALL ">> ${opath}/sub.sh
 if [[ "$(hostname)" == *"satori"* ]]; then
     #echo "#SBATCH --partition=sched_system_all_8" >> ${opath}/sub.sh
-    echo "#SBATCH --qos=sched_level_2" >> ${opath}/sub.sh
+    echo "#SBATCH --qos=sched_level_1" >> ${opath}/sub.sh
     echo "#SBATCH --time=24:00:00 ">> ${opath}/sub.sh
     echo "#SBATCH --mem=100G" >> ${opath}/sub.sh
     echo "#SBATCH --gres=gpu:1" >> ${opath}/sub.sh
@@ -127,14 +133,14 @@ echo " echo GPUs per node:= " $SLURM_JOB_GPUS >> ${opath}/sub.sh
 echo " echo Ntasks per node:= "  $SLURM_NTASKS_PER_NODE >> ${opath}/sub.sh
 
 if [[ "$(hostname)" == *"satori"* ]]; then
-    ## User python environment
     echo 'HOME2=/nobackup/users/bmaier/rs3l/' >> ${opath}/sub.sh
     echo 'PYTHON_VIRTUAL_ENVIRONMENT=rs3l38' >> ${opath}/sub.sh
     echo 'CONDA_ROOT=$HOME2/anaconda3' >> ${opath}/sub.sh
 
     ## Activate WMLCE virtual environment
     echo 'source ${CONDA_ROOT}/etc/profile.d/conda.sh ' >> ${opath}/sub.sh
-    echo 'conda activate $PYTHON_VIRTUAL_ENVIRONMENT' >> ${opath}/sub.sh
+    echo 'conda activate /nobackup/users/bmaier/rs3l/anaconda3/envs/rs3l38/ ' >> ${opath}/sub.sh
+    #echo 'conda activate $PYTHON_VIRTUAL_ENVIRONMENT' >> ${opath}/sub.sh
 
     echo "cd /home/$(whoami)/rs3l/deepjet-geometric/" >> ${opath}/sub.sh
     echo 'export PYTHONPATH=${PYTHONPATH}:${PWD}' >> ${opath}/sub.sh

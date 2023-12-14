@@ -45,6 +45,9 @@ class CLV2_Nate2(Dataset):
         elif args.wz_zz:
             print("# of zzlightlight jets={}, {:.2f}%".format(np.sum(self.data_jettype==0), 100*np.sum(self.data_jettype==0)/len(self.data_jettype)))
             print("# of wz jets={}, {:.2f}%".format(np.sum(self.data_jettype==1), 100*np.sum(self.data_jettype==1)/len(self.data_jettype)))
+        elif args.wz_qcd:
+            print("# of qcd jets={}, {:.2f}%".format(np.sum(self.data_jettype==0), 100*np.sum(self.data_jettype==0)/len(self.data_jettype)))
+            print("# of wz jets={}, {:.2f}%".format(np.sum(self.data_jettype==1), 100*np.sum(self.data_jettype==1)/len(self.data_jettype)))
         else:
             print("# of q jets={}, {:.2f}%".format(np.sum(self.data_jettype==1), 100*np.sum(self.data_jettype==1)/len(self.data_jettype)))
             print("# of c jets={}, {:.2f}%".format(np.sum(self.data_jettype==2), 100*np.sum(self.data_jettype==2)/len(self.data_jettype)))
@@ -156,6 +159,9 @@ class CLV2_Nate2(Dataset):
                     tmp_jettype[tmp_jettype == 11] = 1
                 elif self.args.wz_zz:
                     tmp_jettype[tmp_jettype == 10] = 0 
+                    tmp_jettype[tmp_jettype == 11] = 1 
+                elif self.args.wz_qcd:
+                    tmp_jettype[tmp_jettype != 11] = 0 
                     tmp_jettype[tmp_jettype == 11] = 1 
                 if self.args.fine_tuning:
                      
