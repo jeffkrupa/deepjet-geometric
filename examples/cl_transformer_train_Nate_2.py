@@ -1,25 +1,26 @@
-import sklearn
-import numpy as np
-from random import randrange
-import subprocess
+import os
 import tqdm
 import pandas as pd
+import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DataLoader, DistributedSampler
+
+from deepjet_geometric.datasets import HDF5Dataset_chunks
 from transformers.models.bert.modeling_bert import ACT2FN, BertEmbeddings, BertSelfAttention, prune_linear_layer
 from transformers.activations import gelu_new
-#from longformer.diagonaled_mm_tvm import diagonaled_mm as diagonaled_mm_tvm, mask_invalid_locations
-#from longformer.sliding_chunks import sliding_chunks_matmul_qk, sliding_chunks_matmul_pv
-
-from deepjet_geometric.datasets import CLV1_Torch
+from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.distributed import DistributedSampler
 import utils
 from torch.nn import CrossEntropyLoss, MSELoss
 import math
-import yaml 
+import yaml
 from yaml.loader import SafeLoader
 import os, sys
 import argparse
-import json 
+import json
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -32,135 +33,21 @@ import os
 import time
 
 import sys
-#sys.path.append('HypJet')
-#from HypJet.hyptorch import nn as hypnn
-#from HypJet.hyptorch import pmath
 
-
-
-world_size = 4  # Number of GPUs you want to use 
-
+import torch.nn.functional as F
 
 BATCHSIZE = 200
 VERBOSE = False
-
-p = utils.ArgumentParser()
-p.add_args(
-    '--dataset_pattern', '--output', ('--n_epochs', p.INT),
-    '--checkpoint_path',
-    ('--ipath', p.STR), ('--vpath', p.STR), ('--opath', p.STR),
-    ('--temperature', p.FLOAT), ('--n_out_nodes',p.INT), ('--n_max_train',p.INT), ('--n_max_val',p.INT),
-    ('--qcd_only',p.STORE_TRUE), ('--seed_only',p.STORE_TRUE),
-    ('--abseta',p.STORE_TRUE), ('--kinematics_only',p.STORE_TRUE),
-    ('--istransformer',p.STORE_TRUE),
-    ('--num_encoders', p.INT),
-    ('--embedding_size', p.INT), ('--hidden_size', p.INT), ('--feature_size', p.INT),
-    ('--num_attention_heads', p.INT), ('--intermediate_size', p.INT),
-    ('--label_size', p.INT), ('--num_hidden_layers', p.INT), ('--batch_size', p.INT),
-    ('--mask_charged', p.STORE_TRUE), ('--lr', {'type': float}),
-    ('--attention_band', p.INT),
-    ('--epoch_offset', p.INT),
-    ('--from_snapshot'),
-    ('--lr_schedule', p.STORE_TRUE), '--plot',
-    ('--pt_weight', p.STORE_TRUE), ('--num_max_files', p.INT),
-    ('--num_max_particles', p.INT), ('--dr_adj', p.FLOAT),
-    ('--beta', p.STORE_TRUE),('--hyperbolic', p.STORE_TRUE),('--c', p.FLOAT),
-    ('--lr_policy'), ('--grad_acc', p.INT), ('--is_decoder',p.STORE_TRUE), ('--replace_mean',p.STORE_TRUE)
-)
-config = p.parse_args()
-
-os.system(f"mkdir -p {config.opath}")
-
-stdoutOrigin=sys.stdout 
-sys.stdout = open("./"+config.opath+"/log.txt", "w")
-#json_object = json.dumps(config.toJSON(), indent=4)
-#with open("./"+config.opath+"/config.json", "w") as outfile:
-#    outfile.write(json_object)
-config.save_to("./"+config.opath+"/config.yaml")
-
-with open(f"./{config.opath}/config.json", "w") as outfile:
-    json.dump(config.__dict__, outfile, indent=4)
-    
-#sys.exit(1) 
-print(config)
-sys.stdout.close()
-sys.stdout=stdoutOrigin
-
-#parser = argparse.ArgumentParser(description='Test.')
-#parser.add_argument('--ipath', action='store', type=str, help='Path to input files.')
-#parser.add_argument('--vpath', action='store', type=str, help='Path to validation files.')
-#parser.add_argument('--opath', action='store', type=str, help='Path to save models and plots.')
-#parser.add_argument('--temperature', action='store', type=str, help='SIMCLR Temperature.')
-#parser.add_argument('--nepochs', action='store', type=str, help='Number of epochs to train for.')
-#parser.add_argument('--n_out_nodes', action='store', type=int, help='Number of output (encoded) nodes.')
-#parser.add_argument('--qcd_only', action='store_true',default=False, help='Run on QCD only.')
-#parser.add_argument('--seed_only', action='store_true',default=False, help='Run on seed only.')
-#parser.add_argument('--abseta', action='store_true',default=False, help='Run on abseta.')
-#parser.add_argument('--kinematics_only', action='store_true',default=False, help='Train on kinematics only.')
-
-
-#args = parser.parse_args()
-temperature = float(config.temperature)
-nepochs = int(config.n_epochs)
-print(config.ipath)
-print("qcd only? ", config.qcd_only)
-print("seed only? ", config.seed_only)
-print("train with kinematics only? ", config.kinematics_only)
-print("train with abseta? ", config.abseta)
-model_dir = config.opath
-if not os.path.exists(model_dir):
-    os.system("mkdir -p "+model_dir)
-    #subprocess.call("mkdir -p %s"%model_dir,shell=True)
-data_train = CLV1_Torch(config.ipath, Nevents = config.n_max_train, opath = config.opath+"/train")
-data_test = CLV1_Torch(config.vpath, Nevents = config.n_max_val, opath=  config.opath+"/test")
-
-
-train_sampler = torch.utils.data.distributed.DistributedSampler(data_train, num_replicas=world_size, rank=rank)
-test_sampler = torch.utils.data.distributed.DistributedSampler(data_train, num_replicas=world_size, rank=rank)
-
-
-train_loader = DataLoader(data_train, batch_size=BATCHSIZE, sampler=train_sampler, num_workers=16)
-test_loader = DataLoader(data_test, batch_size=BATCHSIZE, sampler=test_sampler, num_workers=16)
-
-import torch
-from torch import nn
-import torch.nn.functional as F
-from torch.nn import Sequential, Linear
-from torch_scatter import scatter
-import torch.distributed as dist
-import torch.multiprocessing as mp
-from torch.nn.parallel import DistributedDataParallel as DDP
+world_size = torch.cuda.device_count()  # Number of GPUs you want to use
 
 def setup(rank, world_size):
-    dist.init_process_group(
-        backend='nccl', # 'nccl' is recommended for GPU, 'gloo' for CPU
-        init_method='env://', # Uses environment variables for configuration
-        rank=rank,
-        world_size=world_size
-    )
+    os.environ['MASTER_ADDR'] = 'localhost'  # Can be modified as needed
+    os.environ['MASTER_PORT'] = '12355'  # Can be modified as needed
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    torch.cuda.set_device(rank)
 
 def cleanup():
     dist.destroy_process_group()
-
-def global_add_pool(x, batch, size=None):
-    """
-    Globally pool node embeddings into graph embeddings, via elementwise sum.
-    Pooling function takes in node embedding [num_nodes x emb_dim] and
-    batch (indices) and outputs graph embedding [num_graphs x emb_dim].
-
-    Args:
-        x (torch.tensor): Input node embeddings
-        batch (torch.tensor): Batch tensor that indicates which node
-        belongs to which graph
-        size (optional): Total number of graphs. Can be auto-inferred.
-
-    Returns: Pooled graph embeddings
-
-    """
-    size = batch.max().item() + 1 if size is None else size
-    return scatter(x, batch, dim=0, dim_size=size, reduce='add')
-
-
 def contrastive_loss( x_i, x_j, temperature=0.1 ):
     xdevice = x_i.get_device()
     batch_size = x_i.shape[0]
@@ -284,6 +171,9 @@ class OskarAttention(BertSelfAttention):
             attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
             attention_scores = attention_scores / math.sqrt(self.attention_head_size)
             if attention_mask is not None:
+                attention_mask = attention_mask.to(input_ids.device)
+
+                #attention_mask = attention_mask.to(hidden_states.device)
                 # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
                 attention_scores = attention_scores + attention_mask
 
@@ -496,7 +386,7 @@ class Transformer(nn.Module):
     def forward(self, x, mask=None):
         
         if mask is None:
-            mask = torch.ones(x.size()[:-1], device=device)
+            mask = torch.ones(x.size()[:-1])#, device=device)
         if len(mask.shape) == 3:
             attn_mask = mask.unsqueeze(1) # [B, P, P] -> [B, 1, P, P]
         else:
@@ -542,119 +432,91 @@ class Transformer(nn.Module):
         
         return h
 
-        
-
-n_out_nodes = int(config.n_out_nodes)
-
-cl = Transformer(config)
-cl = cl.to(rank)
-cl = DDP(cl,device_ids=[rank])
-
-optimizer = torch.optim.Adam(cl.parameters(), lr=0.001)
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
-
-
-#def train():
-def train(rank, world_size):
+def train(rank, world_size, config, BATCHSIZE, train_loader,):
     setup(rank, world_size)
 
-    cl.train()
-    counter = 0
+    # Initialize model and wrap with DDP
+    model = Transformer(config).to(rank)
+    model = DDP(model, device_ids=[rank], find_unused_parameters=True)
 
-    total_loss = 0
-    num_batches = len(train_loader) +1
-    for batch_idx, data in enumerate(tqdm.tqdm(train_loader)):
-        counter += 1
-        if batch_idx >= num_batches:
-            break
-
-        data = data.to(device)
-        optimizer.zero_grad()
+    # Initialize optimizer and other necessary components here
+    # optimizer = ...
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
+    for epoch in range(config.n_epochs):
+        print(f"Training epoch {epoch+1} of {config.n_epochs}")
+        model.train()
+        total_loss = 0
+        counter = 0 
+        for batch_idx, data in enumerate(tqdm.tqdm(train_loader)):
+            # Your training logic here
+            # ...
+            #if batch_idx >= num_batches:
+            #    break
+            counter += 1
+            optimizer.zero_grad()
      
-        cur_batchsize = min(BATCHSIZE, data.x_pf.shape[0]/100)
-        x_pf = torch.reshape(data.x_pf,(int(cur_batchsize),100,15))
-        
-        x_pf = x_pf.to(device)
-        out = cl(x_pf)
-        loss = contrastive_loss(out[0::2],out[1::2],temperature)
-        
-        loss.backward()
-        total_loss += loss.item()
-        optimizer.step()
-
-    cleanup()   
-    return total_loss / len(train_loader.dataset)
-
-@torch.no_grad()
-def test():
-    cl.eval()
-    
-    total_loss = 0
-    counter = 0
-    num_batches = len(test_loader) - 3
-    for batch_idx, data in enumerate(tqdm.tqdm(test_loader)):
-        if batch_idx >= num_batches:
-            break
-        counter += 1
-        data = data.to(device)
-        with torch.no_grad():
-            cur_batchsize = min(BATCHSIZE, data.x_pf.shape[0]/100)
-            x_pf = torch.reshape(data.x_pf,(int(cur_batchsize),100,15))
-            x_pf = x_pf.to(device)
-            out = cl(x_pf)
+            #cur_batchsize = min(BATCHSIZE, data.x_pf.shape[0]/100)
+            #x_pf = torch.reshape(data.x_pf,(int(cur_batchsize),100,15))
+            #print(data['x_pf']) 
+            #x_pf = x_pf.to(device)
+            out = model(data['x_pf'])
+            #print(out) 
+            loss = contrastive_loss(out[0::2],out[1::2],config.temperature)
+            #print(loss) 
             
-
-            loss = contrastive_loss(out[0::2],out[1::2],temperature)
-
-       
+            loss.backward()
             total_loss += loss.item()
+            optimizer.step()
+        print(f"Total training loss={total_loss/len(train_loader.dataset)}")
+        # Optional: Save model/checkpoint - make sure only one process does this
+        # Save model/checkpoint
+        #if rank == 0:
 
+    cleanup()
+def main(rank, world_size):
+    # Load or parse your config here
+    p = utils.ArgumentParser()
+    p.add_args(
+        '--dataset_pattern', '--output', ('--n_epochs', p.INT),
+        '--checkpoint_path',
+        ('--ipath', p.STR), ('--vpath', p.STR), ('--opath', p.STR),
+        ('--temperature', p.FLOAT), ('--n_out_nodes',p.INT), ('--n_max_train',p.INT), ('--n_max_val',p.INT),
+        ('--qcd_only',p.STORE_TRUE), ('--seed_only',p.STORE_TRUE),
+        ('--abseta',p.STORE_TRUE), ('--kinematics_only',p.STORE_TRUE),
+        ('--istransformer',p.STORE_TRUE),
+        ('--num_encoders', p.INT),
+        ('--embedding_size', p.INT), ('--hidden_size', p.INT), ('--feature_size', p.INT),
+        ('--num_attention_heads', p.INT), ('--intermediate_size', p.INT),
+        ('--label_size', p.INT), ('--num_hidden_layers', p.INT), ('--batch_size', p.INT),
+        ('--mask_charged', p.STORE_TRUE), ('--lr', {'type': float}),
+        ('--attention_band', p.INT),
+        ('--epoch_offset', p.INT),
+        ('--from_snapshot'),
+        ('--lr_schedule', p.STORE_TRUE), '--plot',
+        ('--pt_weight', p.STORE_TRUE), ('--num_max_files', p.INT),
+        ('--num_max_particles', p.INT), ('--dr_adj', p.FLOAT),
+        ('--beta', p.STORE_TRUE),('--hyperbolic', p.STORE_TRUE),('--c', p.FLOAT),
+        ('--lr_policy'), ('--grad_acc', p.INT), ('--is_decoder',p.STORE_TRUE), ('--replace_mean',p.STORE_TRUE)
+    )
+    config = p.parse_args()
+    config.save_to("./"+config.opath+"/config.yaml")
     
-    
-    
-    return total_loss / len(test_loader.dataset)
-    
+    with open(f"./{config.opath}/config.json", "w") as outfile:
+        json.dump(config.__dict__, outfile, indent=4)
+        
+    #sys.exit(1) 
+    print(config) 
+    os.system(f"mkdir -p {config.opath}")
 
-best_val_loss = 1e9
+    # Prepare your data loaders
+    data_train = HDF5Dataset_chunks(config.ipath, Nevents=config.n_max_train)
+    train_sampler = DistributedSampler(data_train, num_replicas=world_size, rank=rank)
+    train_loader = DataLoader(data_train, batch_size=config.batch_size, sampler=train_sampler, num_workers=4)
 
-all_train_loss = []
-all_val_loss = []
+    # Call the training function
+    train(rank, world_size, config, config.batch_size, train_loader,)
 
-loss_dict = {'train_loss': [], 'val_loss': []}
-
-for epoch in range(1, nepochs):
-    print(f'Training Epoch {epoch} on {len(train_loader.dataset)} jets')
-    #loss = train()
-    mp.spawn(train, args=(world_size,), nprocs=world_size, join=True)
-    scheduler.step()
-
-    #exit(1)
-    
-    print(f'Validating Epoch {epoch} on {len(test_loader.dataset)} jets')
-    loss_val = test()
-
-    print('Epoch {:03d}, Loss: {:.8f}, ValLoss: {:.8f}'.format(
-        epoch, loss, loss_val))
-
-    all_train_loss.append(loss)
-    all_val_loss.append(loss_val)
-    loss_dict['train_loss'].append(loss)
-    loss_dict['val_loss'].append(loss_val)
-    df = pd.DataFrame.from_dict(loss_dict)
-    
-    
-
-    df.to_csv("%s/"%model_dir+"/loss.csv")
-    
-    state_dicts = {'model':cl.state_dict(),'opt':optimizer.state_dict(),'lr':scheduler.state_dict()}
-
-    torch.save(state_dicts, os.path.join(model_dir, f'epoch-{epoch}.pt'))
-
-    if loss_val < best_val_loss:
-        best_val_loss = loss_val
-
-        torch.save(state_dicts, os.path.join(model_dir, 'best-epoch.pt'.format(epoch)))
-
-print(all_train_loss)
-print(all_val_loss)
-
+if __name__ == "__main__":
+    world_size = torch.cuda.device_count()  # Adjust as needed
+    mp.spawn(main, args=(world_size,), nprocs=world_size, join=True)
