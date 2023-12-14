@@ -614,11 +614,13 @@ if args.continue_training:
     #cut_path = args.mpath.rsplit('/', 2)[0] + '/'
     loss_dict = {'train_loss': pd.read_csv(os.path.join(args.opath,'loss.csv'))['train_loss'].tolist(), 
                  'val_loss': pd.read_csv(os.path.join(args.opath,'loss.csv'))['val_loss'].tolist()}
+
+    best_val_loss = min(loss_dict['val_loss'])
 else:
     start_epoch = 1
     loss_dict = {'train_loss': [], 'val_loss': []}
+    best_val_loss = float('inf')
 
-best_val_loss = float('inf')
 epochs_no_improve = 0
 n_epochs_stop = 999  # Number of epochs to stop after no improvement
 
