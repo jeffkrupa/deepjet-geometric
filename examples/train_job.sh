@@ -118,7 +118,7 @@ echo "WZ_ZZ: ${WZ_ZZ}"
 echo "WZ_QCD: ${WZ_QCD}"
 # Make opath unique based on training setup
 OLD_IFS="$IFS"
-IFS='' opath="nov23/Graph-ntrain=${NTRAIN},nval=${NVAL},augs=${WHICH_AUGMENTATIONS[*]}"
+IFS='' opath="dec23/Graph-ntrain=${NTRAIN},nval=${NVAL},augs=${WHICH_AUGMENTATIONS[*]}"
 IFS="$OLD_IFS"
 if [[ "$FULLY_SUPERVISED" == "True" ]]; then
    opath="$opath,fully-supervised"
@@ -167,6 +167,13 @@ if [[ "$FULLY_SUPERVISED" == "False" ]]; then
    opath="$opath,RS3Lbase=${extracted_dir}"
 fi
 
+N_OUTPUT_NODES=8
+if [[ "$opath" == *"512outputdims"* ]]; then
+    N_OUTPUT_NODES=512
+elif [[ "$opath" == *"128outputdims"* ]]; then
+    N_OUTPUT_NODES=128
+fi
+
 opath=$(increment_suffix "$opath" "$opath")
 echo "OPATH: ${opath}"
 
@@ -185,7 +192,7 @@ echo "New directory created: ${opath}"
 cp cl_v1_train_t0p1_nloss_Nate2.py ${opath}
 
 
-echo python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath ${ipath} --vpath ${vpath} --temperature 0.1 --n_out_nodes 8 --hidden_dim 128 --lr 0.0001 --batchsize 1000 --fine_tuning "${PYTHON_ARGS[@]}" "${POSITIONAL_ARGS[@]}" > ${opath}/runcommand.sh
+echo python3 cl_v1_train_t0p1_nloss_Nate2.py --ipath ${ipath} --vpath ${vpath} --temperature 0.1 --n_out_nodes ${N_OUTPUT_NODES} --hidden_dim 128 --lr 0.0001 --batchsize 1000 --fine_tuning "${PYTHON_ARGS[@]}" "${POSITIONAL_ARGS[@]}" > ${opath}/runcommand.sh
 
 
 rm ${opath}/sub.sh

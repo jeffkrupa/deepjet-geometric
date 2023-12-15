@@ -9,9 +9,9 @@ from .cl_v1_dataset import CLV1
 from .cl_v2_dataset import CLV2
 #from .cl_v2_dataset_Nate import CLV2_Nate
 from .cl_v2_dataset_Nate2 import CLV2_Nate2
-from .cl_v1_dataset_Torch import CLV1_Torch
-from .HDF5Dataset import HDF5Dataset
-from .HDF5Dataset_chunks_old import HDF5Dataset_chunks
-__all__ = ['DeepJetCoreV1', 'DeepJetCoreV2', 'MetV1', 'TICLV1', 'TICLV2', 'SUEPV1', 'CLV1', 'CLV2', 'CLV2_Nate2','CLV1_Torch','HDF5Dataset','HDF5Dataset_chunks']
+#from .cl_v1_dataset_Torch import CLV1_Torch
+#from .HDF5Dataset import HDF5Dataset
+#from .HDF5Dataset_chunks_old import HDF5Dataset_chunks
+__all__ = ['DeepJetCoreV1', 'DeepJetCoreV2', 'MetV1', 'TICLV1', 'TICLV2', 'SUEPV1', 'CLV1', 'CLV2', 'CLV2_Nate2',]#'CLV1_Torch','HDF5Dataset','HDF5Dataset_chunks']
 
 
